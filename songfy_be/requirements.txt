@@ -1,0 +1,14 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+ytmusicapi==1.9.1
+yt-dlp==2024.9.27
+httpx==0.27.2
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0
+slowapi==0.1.9
+firebase-admin==6.5.0
+syncedlyrics==1.0.1
+beautifulsoup4>=4.12.0
+requests>=2.31.0

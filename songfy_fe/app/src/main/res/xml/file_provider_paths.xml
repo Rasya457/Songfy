@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths for Songfy offline audio files.
+    offline_songs/ di filesDir berisi .m4a hasil download.
+    ExoPlayer membaca via content:// URI (bukan file://) agar aman di Android 7+.
+-->
+<paths>
+    <files-path
+        name="offline_songs"
+        path="offline_songs/" />
+</paths>

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "975555734156",
+    "project_id": "songfy-770ae",
+    "storage_bucket": "songfy-770ae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:975555734156:android:6823ed10fefeb626d629a9",
+        "android_client_info": {
+          "package_name": "com.lagu.songfy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "975555734156-coathvngadt29flgehhcqsf75d29eghp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.lagu.songfy",
+            "certificate_hash": "3ae25f7d08f86b148559b2b4d5fae10e7ca2b60c"
+          }
+        },
+        {
+          "client_id": "975555734156-rickp9inilcrul6292cpk78ia06m13nn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFYsZurtIGIzufGjuaIT3pfpjeiAH36KY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "975555734156-rickp9inilcrul6292cpk78ia06m13nn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

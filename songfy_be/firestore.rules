@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Root user document
+    match /users/{userId} {
+      // User hanya boleh membaca data profil miliknya sendiri
+      allow read: if isOwner(userId);
+
+      // User TIDAK boleh memodifikasi activeSessionId, role, deviceName secara langsung dari client.
+      // Field ini hanya boleh dimutasi oleh Backend menggunakan Firebase Admin SDK (yang otomatis membypass rules).
+      allow create: if isOwner(userId) && 
+        !request.resource.data.keys().hasAny(['activeSessionId', 'role', 'deviceName']);
+
+      allow update: if isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['activeSessionId', 'role', 'deviceName']);
+
+      allow delete: if false;
+
+      // Subkoleksi Session:
+      // Client hanya boleh membaca untuk mendeteksi perubahan activeSessionId (force logout).
+      // Client DILARANG menulis ke dokumen session (hanya BE yang boleh menulis via Admin SDK).
+      match /session/{document=**} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      // Subkoleksi Riwayat Putar (History)
+      match /history/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subkoleksi Playlist Pribadi
+      match /playlists/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subkoleksi Lagu yang Disukai (Liked Songs)
+      match /liked_songs/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subkoleksi Riwayat Pencarian
+      match /search_history/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Subkoleksi Pengaturan & Preferensi Personal
+      match /settings/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Default deny untuk semua dokumen lain di luar pohon users/{userId}
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
