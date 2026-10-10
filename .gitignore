@@ -1,0 +1,82 @@
+# ===========================
+# Android / Gradle
+# ===========================
+*.iml
+.gradle/
+local.properties
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# ===========================
+# APK & AAB (JANGAN pernah commit build output!)
+# ===========================
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ===========================
+# Keystore & signing secrets
+# ===========================
+*.keystore
+*.jks
+keystore.properties
+signing.properties
+release.keystore
+debug.keystore
+
+# ===========================
+# Firebase / Google secrets
+# ===========================
+google-services.json
+GoogleService-Info.plist
+.firebaserc
+serviceAccountKey.json
+firebase-adminsdk*.json
+
+# ===========================
+# Environment / secrets
+# ===========================
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+secrets.properties
+
+# ===========================
+# Python / Backend
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+*.log
+.pytest_cache/
+.mypy_cache/
+
+# ===========================
+# IDE
+# ===========================
+.idea/workspace.xml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# ===========================
+# Node / Frontend (kalau ada)
+# ===========================
+node_modules/
+.next/
+dist/
