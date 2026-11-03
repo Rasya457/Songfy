@@ -25,6 +25,7 @@ val workflowDebugKeystoreFile = debugKeystorePathOverride?.let(::file)
 
 plugins {
     id("com.android.application")
+    alias(libs.plugins.google.services)
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.compose.compiler)
@@ -311,6 +312,9 @@ dependencies {
     implementation(libs.protobuf.javalite)
     implementation(libs.protobuf.kotlin.lite)
 
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.play.services.auth)
     coreLibraryDesugaring(libs.desugaring)
 
     implementation(libs.timber)

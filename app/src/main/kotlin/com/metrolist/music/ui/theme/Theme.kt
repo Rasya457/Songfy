@@ -64,6 +64,7 @@ fun MetrolistTheme(
     // Use standard MaterialTheme instead of MaterialExpressiveTheme
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = SongfyTypography,
         content = content,
     )
 }

@@ -8,3 +8,6 @@ import com.metrolist.music.R
 val bbh_bartle = FontFamily(
     Font(R.font.bbh_bartle_regular, FontWeight.Normal)
 )
+
+/** Alias: camelCase name used by WrappedIntro */
+val bbhBartle = bbh_bartle

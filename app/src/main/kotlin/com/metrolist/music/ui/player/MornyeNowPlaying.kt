@@ -1,0 +1,1165 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ *
+ * MornyeNowPlaying.kt
+ * Apple Music / Mornye unified morphing Now Playing screen.
+ * Single screen, 3 modes: PLAYER ↔ LYRICS ↔ QUEUE
+ */
+
+package com.metrolist.music.ui.player
+
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.util.LruCache
+import android.widget.Toast
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
+import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableLongState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.offline.Download
+import androidx.media3.exoplayer.offline.DownloadService
+import androidx.room.withTransaction
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.request.crossfade
+import com.metrolist.music.LocalDatabase
+import com.metrolist.music.LocalDownloadUtil
+import com.metrolist.music.LocalNavController
+import com.metrolist.music.LocalPlayerConnection
+import com.metrolist.music.R
+import com.metrolist.music.db.entities.LyricsEntity
+import com.metrolist.music.extensions.toMediaItem
+import com.metrolist.music.lyrics.LrcParser
+import com.metrolist.music.lyrics.LyricsUtils
+import com.metrolist.music.lyrics.SyncLine
+import com.metrolist.music.lyrics.toSyncLine
+import com.metrolist.music.playback.ExoDownloadService
+import com.metrolist.music.playback.PlayerConnection
+import com.metrolist.music.ui.component.BottomSheetState
+import com.metrolist.music.ui.component.CastAudioDialog
+import com.metrolist.music.ui.component.LocalBottomSheetPageState
+import com.metrolist.music.ui.component.LyricsOffsetDialog
+import com.metrolist.music.ui.component.PlayerSheetMotion
+import com.metrolist.music.ui.component.PlayerSleepTimerDialog
+import com.metrolist.music.ui.component.PlayerSliderTrack
+import com.metrolist.music.ui.component.SongOptionsMenu
+import com.metrolist.music.ui.component.SyncedLyricsView
+import com.metrolist.music.ui.menu.AddToPlaylistDialog
+import com.metrolist.music.ui.utils.ShowMediaInfo
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Locale
+import kotlin.math.roundToInt
+
+enum class NowPlayingMode { PLAYER, LYRICS, QUEUE }
+
+// In-memory cache for parsed lyrics to eliminate UI jank when opening the player
+private val lyricsCache = LruCache<String, List<SyncLine>>(60)
+
+private fun formatTime(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    return String.format(Locale.getDefault(), "%d:%02d", totalSec / 60, totalSec % 60)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main entry point
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun MornyeNowPlaying(
+    state: BottomSheetState,
+    positionState: MutableLongState,
+    durationState: MutableLongState,
+    effectivePositionProvider: () -> Long,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playerConnection = LocalPlayerConnection.current ?: return
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
+    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
+    val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
+    val currentLyrics by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
+
+    val bottomSheetPageState = LocalBottomSheetPageState.current
+    val context = LocalContext.current
+    val database = LocalDatabase.current
+    val coroutineScope = rememberCoroutineScope()
+    val navController = LocalNavController.current
+    val downloadUtil = LocalDownloadUtil.current
+    val download by downloadUtil.getDownload(mediaMetadata?.id ?: "").collectAsStateWithLifecycle(initialValue = null)
+
+    var showSongOptionsMenu by rememberSaveable { mutableStateOf(false) }
+    var showLyricsOffsetDialog by rememberSaveable { mutableStateOf(false) }
+    var showSleepTimerDialog by rememberSaveable { mutableStateOf(false) }
+    var showCastDialog by rememberSaveable { mutableStateOf(false) }
+    var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+
+    var mode by remember { mutableStateOf(NowPlayingMode.PLAYER) }
+    val isPlayerMode = mode == NowPlayingMode.PLAYER
+
+    val closeInteraction = remember { MutableInteractionSource() }
+    val artTitleInteraction = remember { MutableInteractionSource() }
+
+    LaunchedEffect(mediaMetadata?.id, currentLyrics) {
+        if (mediaMetadata != null && currentLyrics == null) {
+            delay(500)
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val ep = EntryPointAccessors.fromApplication(
+                        context.applicationContext,
+                        com.metrolist.music.di.LyricsHelperEntryPoint::class.java,
+                    )
+                    val result = ep.lyricsHelper().getLyrics(mediaMetadata!!)
+                    database.query {
+                        upsert(LyricsEntity(mediaMetadata!!.id, result.lyrics, result.provider))
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Cached ImageRequests for ultra-smooth 60fps opening & morphing
+    val coverImageRequest = remember(mediaMetadata?.thumbnailUrl) {
+        ImageRequest.Builder(context)
+            .data(mediaMetadata?.thumbnailUrl)
+            .crossfade(200)
+            .build()
+    }
+
+    val blurImageRequest = remember(mediaMetadata?.thumbnailUrl) {
+        ImageRequest.Builder(context)
+            .data(mediaMetadata?.thumbnailUrl)
+            .size(100, 100) // Downsample to 100x100: makes full-screen GPU blur instantaneous
+            .allowHardware(false)
+            .crossfade(200)
+            .build()
+    }
+
+    // Lyrics caching: check LruCache first (0ms), otherwise parse off the UI thread
+    val lrcText = remember(currentLyrics, mediaMetadata?.id) {
+        currentLyrics?.takeIf { it.id == mediaMetadata?.id }?.lyrics?.trim()
+    }
+    var parsedLyrics by remember(mediaMetadata?.id) {
+        mutableStateOf(emptyList<SyncLine>())
+    }
+
+    LaunchedEffect(mediaMetadata?.id, lrcText) {
+        val songId = mediaMetadata?.id ?: return@LaunchedEffect
+        if (lrcText == null) {
+            parsedLyrics = emptyList()
+            return@LaunchedEffect
+        }
+        val id = "$songId:${lrcText.hashCode()}"
+        val cached = lyricsCache.get(id)
+        if (cached != null) {
+            parsedLyrics = cached
+            return@LaunchedEffect
+        }
+
+        if (lrcText.isNullOrBlank() || lrcText == LyricsEntity.LYRICS_NOT_FOUND) {
+            parsedLyrics = emptyList()
+            return@LaunchedEffect
+        }
+
+        val parsed = withContext(Dispatchers.Default) {
+            try {
+                val entries = LyricsUtils.parseLyrics(lrcText)
+                if (entries.isNotEmpty()) {
+                    entries.mapIndexed { idx, entry ->
+                        val nextEntryTime = entries.getOrNull(idx + 1)?.time ?: (entry.time + 3500L)
+                        entry.toSyncLine(nextEntryTime)
+                    }
+                } else {
+                    val lrcLines = LrcParser.parse(lrcText)
+                    if (lrcLines.isNotEmpty()) {
+                        lrcLines
+                    } else {
+                        lrcText.lines().mapNotNull { line ->
+                            val trimmed = line.trim()
+                            if (trimmed.isNotBlank() && !trimmed.startsWith("[")) {
+                                SyncLine(startMs = -1L, endMs = -1L, text = trimmed)
+                            } else null
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                lrcText.lines().mapNotNull { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotBlank() && !trimmed.startsWith("[")) {
+                        SyncLine(startMs = -1L, endMs = -1L, text = trimmed)
+                    } else null
+                }
+            }
+        }
+        lyricsCache.put(id, parsed)
+        parsedLyrics = parsed
+    }
+
+    val isEpisode = currentSong?.song?.isEpisode == true
+    val isFavorite = if (isEpisode) currentSong?.song?.inLibrary != null else currentSong?.song?.liked == true
+
+    val audioInfo = remember(currentFormat) {
+        currentFormat?.let {
+            val codec = it.mimeType.substringAfter("/").substringBefore(";").uppercase()
+            val kbps = if (it.bitrate > 0) "${it.bitrate / 1000} kbps" else null
+            val khz = it.sampleRate?.let { sr -> "${sr / 1000.0} kHz" } ?: "44.1 kHz"
+            listOfNotNull(codec, kbps, khz).joinToString("  •  ")
+        } ?: "FLAC  •  16-bit  •  44.1 kHz"
+    }
+
+    val lyricsOffset = currentSong?.song?.lyricsOffset ?: 0
+    val currentEffectiveProvider by rememberUpdatedState(effectivePositionProvider)
+
+    val positionMs = positionState.longValue
+    val durationMs = durationState.longValue
+
+    val title = mediaMetadata?.title?.takeIf { it.isNotBlank() } ?: "Unknown Title"
+    val artist = mediaMetadata?.artists?.joinToString { it.name }?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
+
+    val onMoreClick: () -> Unit = {
+        showSongOptionsMenu = true
+    }
+
+    // Cover morph animation: 0f = PLAYER (large, center), 1f = COMPACT (small, top-left)
+    val transitionProgress by animateFloatAsState(
+        targetValue = if (isPlayerMode) 0f else 1f,
+        animationSpec = PlayerSheetMotion.CoverMorphSpring,
+        label = "coverTransition",
+    )
+
+    // Smooth animation progress for 3-dots menu popover and background blur
+    val menuAnimProgress by animateFloatAsState(
+        targetValue = if (showSongOptionsMenu) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = 280f,
+        ),
+        label = "menuAnim",
+    )
+
+    // Smooth animation progress for audio output dialog and background blur
+    val castAnimProgress by animateFloatAsState(
+        targetValue = if (showCastDialog) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = 280f,
+        ),
+        label = "castAnim",
+    )
+
+    // Combined overlay progress and blur radius for both 3-dots menu and audio output dialog
+    val overlayAnimProgress = maxOf(menuAnimProgress, castAnimProgress)
+    val overlayBlurRadius = (overlayAnimProgress * 25f).dp
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        // Ambient blurred background artwork (cached & downsampled for 60fps smoothness)
+        if (mediaMetadata?.thumbnailUrl != null) {
+            AsyncImage(
+                model = blurImageRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .let {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.blur(80.dp) else it
+                    }
+                    .scale(1.25f),
+            )
+        }
+        // Dark tint overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.50f)),
+        )
+
+        // Main vertical layout (smoothly blurs and dims when 3-dots menu is opened)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                .let {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && overlayBlurRadius > 0.dp) {
+                        it.blur(overlayBlurRadius)
+                    } else it
+                }
+                .graphicsLayer {
+                    val s = 1f - (overlayAnimProgress * 0.035f)
+                    scaleX = s
+                    scaleY = s
+                    alpha = 1f - (overlayAnimProgress * 0.20f)
+                },
+        ) {
+            // Drag handle pill
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 4.dp)
+                    .size(width = 36.dp, height = 4.5.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.40f))
+                    .align(Alignment.CenterHorizontally)
+                    .clickable(
+                        interactionSource = closeInteraction,
+                        indication = null,
+                    ) { onClose() },
+            )
+
+            // ── Morphing Center Area (Cover + Title + Lyrics / Queue) ──
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                val totalWidth = maxWidth
+                val totalHeight = maxHeight
+
+                // Dimensions for COMPACT state (Lyrics / Queue mode)
+                val compactArtSize = 56.dp
+                val compactArtX = 20.dp
+                val compactArtY = 8.dp
+                val compactArtCorner = 12.dp
+
+                // Dimensions for PLAYER state
+                val playerTitleHeight = 58.dp
+                val playerTitleY = (totalHeight - playerTitleHeight - 10.dp).coerceAtLeast(0.dp)
+
+                // Available vertical height for album art (above title)
+                val availableHeightForArt = playerTitleY - 12.dp
+                val playerArtSize = minOf(totalWidth - 52.dp, availableHeightForArt - 24.dp).coerceIn(160.dp, 330.dp)
+                val playerArtX = (totalWidth - playerArtSize) / 2
+                val playerArtY = ((availableHeightForArt - playerArtSize) / 2).coerceAtLeast(8.dp)
+                val playerArtCorner = 24.dp
+
+                // Smoothly animated coordinates and size
+                val currentArtSize = lerp(playerArtSize, compactArtSize, transitionProgress)
+                val currentArtX = lerp(playerArtX, compactArtX, transitionProgress)
+                val currentArtY = lerp(playerArtY, compactArtY, transitionProgress)
+                val currentArtCorner = lerp(playerArtCorner, compactArtCorner, transitionProgress)
+
+                // Layer 1: Lyrics / Queue Content (beneath compact header)
+                if (transitionProgress > 0.01f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = compactArtY + compactArtSize + 8.dp)
+                            .fillMaxHeight()
+                            .graphicsLayer { alpha = ((transitionProgress - 0.3f) * 1.45f).coerceIn(0f, 1f) },
+                    ) {
+                        if (mode == NowPlayingMode.LYRICS) {
+                            SyncedLyricsView(
+                                lines = parsedLyrics,
+                                positionProvider = { currentEffectiveProvider() + lyricsOffset },
+                                onSeek = { playerConnection.player.seekTo((it - lyricsOffset).coerceAtLeast(0L)) },
+                                isLoading = lrcText == null,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else if (mode == NowPlayingMode.QUEUE) {
+                            QueueContent(
+                                playerConnection = playerConnection,
+                                shuffleModeEnabled = shuffleModeEnabled,
+                                repeatMode = repeatMode,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+
+                // Layer 2: Title, artist, star and three-dots (glides upward to top-right when mode changes)
+                val titleX = lerp(24.dp, compactArtX + compactArtSize + 12.dp, transitionProgress)
+                val titleY = lerp(playerTitleY, compactArtY, transitionProgress)
+                val titleBlockHeight = lerp(playerTitleHeight, compactArtSize, transitionProgress)
+                val titleSize = androidx.compose.ui.util.lerp(20f, 15f, transitionProgress).sp
+                val artistSize = androidx.compose.ui.util.lerp(15f, 13f, transitionProgress).sp
+                val actionIconSize = lerp(24.dp, 22.dp, transitionProgress)
+
+                Row(
+                    modifier = Modifier
+                        .offset(x = titleX, y = titleY)
+                        .width(totalWidth - titleX - lerp(24.dp, 16.dp, transitionProgress))
+                        .height(titleBlockHeight)
+                        .padding(top = lerp(0.dp, 10.dp, transitionProgress)),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(top = lerp(5.dp, 0.dp, transitionProgress))
+                            .clickable(
+                                interactionSource = artTitleInteraction,
+                                indication = null,
+                                enabled = !isPlayerMode,
+                                onClick = { mode = NowPlayingMode.PLAYER },
+                            ),
+                    ) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontSize = titleSize,
+                            fontWeight = FontWeight.Bold,
+                            fontStyle = FontStyle.Italic,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = artist,
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = artistSize,
+                            fontWeight = FontWeight.Medium,
+                            fontStyle = FontStyle.Italic,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = { playerConnection.toggleLike() },
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(if (isFavorite) R.drawable.star else R.drawable.star_border),
+                            contentDescription = null,
+                            tint = if (isFavorite) MaterialTheme.colorScheme.primary else Color.White,
+                            modifier = Modifier.size(actionIconSize),
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onMoreClick,
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.more_horiz),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(actionIconSize),
+                        )
+                    }
+                }
+
+                // Layer 4: Morphing Cover Image (animates size & position smoothly)
+                Box(
+                    modifier = Modifier
+                        .offset(x = currentArtX, y = currentArtY)
+                        .size(currentArtSize)
+                        .clip(RoundedCornerShape(currentArtCorner))
+                        .clickable(
+                            interactionSource = artTitleInteraction,
+                            indication = null,
+                            enabled = !isPlayerMode,
+                            onClick = { mode = NowPlayingMode.PLAYER },
+                        ),
+                ) {
+                    AsyncImage(
+                        model = coverImageRequest,
+                        contentDescription = title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+
+            // ── Bottom Controls (always visible) ──
+            BottomControls(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                isPlaying = isPlaying,
+                audioInfo = audioInfo,
+                onSeek = { playerConnection.player.seekTo(it) },
+                onPlayPause = {
+                    if (isPlaying) playerConnection.player.pause()
+                    else playerConnection.player.play()
+                },
+                onNext = { playerConnection.player.seekToNext() },
+                onPrev = { playerConnection.player.seekToPrevious() },
+                mode = mode,
+                onLyricsClick = {
+                    mode = if (mode == NowPlayingMode.LYRICS) NowPlayingMode.PLAYER else NowPlayingMode.LYRICS
+                },
+                onCastClick = {
+                    showCastDialog = true
+                },
+                onQueueClick = {
+                    mode = if (mode == NowPlayingMode.QUEUE) NowPlayingMode.PLAYER else NowPlayingMode.QUEUE
+                },
+            )
+        }
+
+        if (showSleepTimerDialog) {
+            PlayerSleepTimerDialog(
+                onDismiss = { showSleepTimerDialog = false },
+            )
+        }
+
+        if (castAnimProgress > 0.005f) {
+            CastAudioDialog(
+                animProgress = castAnimProgress,
+                onDismiss = { showCastDialog = false },
+            )
+        }
+
+        if (showLyricsOffsetDialog) {
+            LyricsOffsetDialog(
+                initialOffsetMs = lyricsOffset,
+                onDismiss = { showLyricsOffsetDialog = false },
+                onSaveOffset = { newOffset ->
+                    currentSong?.song?.let { song ->
+                        coroutineScope.launch(Dispatchers.IO) {
+                            database.query {
+                                update(song.copy(lyricsOffset = newOffset))
+                            }
+                        }
+                    }
+                },
+            )
+        }
+
+        // Floating 3-dots Menu Popover with smooth scale/fade & screen blur
+        if (menuAnimProgress > 0.005f && mediaMetadata != null) {
+            val meta = mediaMetadata!!
+            val isDownloaded = download?.state == Download.STATE_COMPLETED
+            val isCached = currentSong?.song?.dateDownload != null || runCatching {
+                playerConnection.service.playerCache.isCached(meta.id, 0, 1024)
+            }.getOrDefault(false)
+            val isLocal = currentSong?.song?.isLocal == true
+
+            SongOptionsMenu(
+                albumName = meta.album?.title ?: meta.title,
+                artistName = meta.artists.joinToString { it.name }.takeIf { it.isNotBlank() } ?: "Unknown Artist",
+                animProgress = menuAnimProgress,
+                isLyricsOrQueueMode = !isPlayerMode,
+                isCached = isCached,
+                isDownloaded = isDownloaded,
+                isLocal = isLocal,
+                onDismiss = { showSongOptionsMenu = false },
+                onAction = { action ->
+                    showSongOptionsMenu = false
+                    when (action) {
+                        "share" -> {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "https://music.youtube.com/watch?v=${meta.id}")
+                            }
+                            context.startActivity(Intent.createChooser(intent, null))
+                        }
+                        "upgrade" -> {
+                            bottomSheetPageState.show { ShowMediaInfo(meta.id) }
+                        }
+                        "info" -> {
+                            bottomSheetPageState.show { ShowMediaInfo(meta.id) }
+                        }
+                        "playlist" -> {
+                            showChoosePlaylistDialog = true
+                        }
+                        "video" -> {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/watch?v=${meta.id}"))
+                            context.startActivity(intent)
+                        }
+                        "radio" -> {
+                            Toast.makeText(context, context.getString(R.string.starting_radio), Toast.LENGTH_SHORT).show()
+                            playerConnection.startRadioSeamlessly()
+                        }
+                        "play_next" -> {
+                            playerConnection.playNext(meta.toMediaItem())
+                            Toast.makeText(context, "Playing next", Toast.LENGTH_SHORT).show()
+                        }
+                        "queue" -> {
+                            playerConnection.addToQueue(meta.toMediaItem())
+                            Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
+                        }
+                        "download" -> {
+                            downloadUtil.download(meta)
+                        }
+                        "remove_download" -> {
+                            DownloadService.sendRemoveDownload(
+                                context,
+                                ExoDownloadService::class.java,
+                                meta.id,
+                                false,
+                            )
+                        }
+                        "remove_cache" -> {
+                            runCatching {
+                                playerConnection.service.playerCache.removeResource(meta.id)
+                            }
+                            coroutineScope.launch(Dispatchers.IO) {
+                                database.query {
+                                    getSongByIdBlocking(meta.id)?.let { update(it.song.copy(dateDownload = null)) }
+                                }
+                            }
+                            Toast.makeText(context, "Removed from cache", Toast.LENGTH_SHORT).show()
+                        }
+                        "album" -> {
+                            meta.album?.let { album ->
+                                navController.navigate("album/${album.id}")
+                                state.collapseSoft()
+                            }
+                        }
+                        "artist" -> {
+                            meta.artists.firstOrNull()?.let { artist ->
+                                navController.navigate("artist/${artist.id}")
+                                state.collapseSoft()
+                            }
+                        }
+                        "sleep" -> {
+                            showSleepTimerDialog = true
+                        }
+                        "lyrics_offset" -> {
+                            showLyricsOffsetDialog = true
+                        }
+                        "copy_log" -> {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val log = "Title: ${meta.title}\nArtist: ${meta.artists.joinToString { it.name }}\nID: ${meta.id}\nDuration: ${durationMs}ms\nFormat: $audioInfo\nBitrate: ${currentFormat?.bitrate ?: 0}"
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Song Log", log))
+                            Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+            )
+        }
+
+        if (mediaMetadata != null) {
+            AddToPlaylistDialog(
+                isVisible = showChoosePlaylistDialog,
+                onGetSong = {
+                    database.withTransaction {
+                        insert(mediaMetadata!!)
+                    }
+                    listOf(mediaMetadata!!.id)
+                },
+                onGetSongIds = { listOf(mediaMetadata!!.id) },
+                onDismiss = {
+                    showChoosePlaylistDialog = false
+                },
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Queue Content
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun QueueContent(
+    playerConnection: PlayerConnection,
+    shuffleModeEnabled: Boolean,
+    repeatMode: Int,
+    modifier: Modifier = Modifier,
+) {
+    val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
+    val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle(initialValue = -1)
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(currentWindowIndex) {
+        if (currentWindowIndex in queueWindows.indices) listState.animateScrollToItem(currentWindowIndex)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (shuffleModeEnabled) MaterialTheme.colorScheme.primary.copy(0.35f) else Color.White.copy(0.12f))
+                    .clickable { playerConnection.player.shuffleModeEnabled = !shuffleModeEnabled }
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.shuffle), null, tint = if (shuffleModeEnabled) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(20.dp))
+            }
+
+            val repeatActive = repeatMode != Player.REPEAT_MODE_OFF
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (repeatActive) MaterialTheme.colorScheme.primary.copy(0.35f) else Color.White.copy(0.12f))
+                    .clickable {
+                        playerConnection.player.repeatMode = when (repeatMode) {
+                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                            else -> Player.REPEAT_MODE_OFF
+                        }
+                    }
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(if (repeatMode == Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat), null, tint = if (repeatActive) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Continue Playing", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (queueWindows.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Queue is empty", color = Color.White.copy(0.60f), fontSize = 16.sp)
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                itemsIndexed(queueWindows, key = { i, w -> w.uid.hashCode() + i }) { index, window ->
+                    val meta = window.mediaItem.mediaMetadata
+                    val isCurrent = index == currentWindowIndex
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isCurrent) Color.White.copy(0.15f) else Color.Transparent)
+                            .clickable { playerConnection.player.seekToDefaultPosition(index) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(model = meta.artworkUri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(meta.title?.toString().orEmpty(), color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White, fontSize = 14.sp, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(meta.artist?.toString().orEmpty(), color = Color.White.copy(0.60f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (isCurrent) Icon(painterResource(R.drawable.play), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bottom Controls
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BottomControls(
+    positionMs: Long,
+    durationMs: Long,
+    isPlaying: Boolean,
+    audioInfo: String,
+    onSeek: (Long) -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrev: () -> Unit,
+    mode: NowPlayingMode,
+    onLyricsClick: () -> Unit,
+    onCastClick: () -> Unit,
+    onQueueClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val prevInteraction = remember { MutableInteractionSource() }
+    val playInteraction = remember { MutableInteractionSource() }
+    val nextInteraction = remember { MutableInteractionSource() }
+    val lyricsInteraction = remember { MutableInteractionSource() }
+    val castInteraction = remember { MutableInteractionSource() }
+    val queueInteraction = remember { MutableInteractionSource() }
+    val playerConnection = LocalPlayerConnection.current
+    val castHandler = remember(playerConnection) {
+        try {
+            playerConnection?.service?.castConnectionHandler
+        } catch (_: Exception) {
+            null
+        }
+    }
+    val isCasting by castHandler?.isCasting?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
+
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVol = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat().coerceAtLeast(1f) }
+
+    val connectedBluetoothDevice = remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            runCatching {
+                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                }
+            }.getOrNull()
+        } else null
+    }
+    val isBluetoothActive = connectedBluetoothDevice != null && !isCasting
+
+    var volumeUi by remember {
+        mutableFloatStateOf((audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol).coerceIn(0f, 1f))
+    }
+
+    DisposableEffect(context, audioManager, maxVol) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                val current = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol).coerceIn(0f, 1f)
+                volumeUi = current
+            }
+        }
+        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
+        } catch (_: Exception) {}
+        onDispose {
+            try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(audioManager, maxVol) {
+        while (true) {
+            delay(350)
+            val current = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol).coerceIn(0f, 1f)
+            if (kotlin.math.abs(current - volumeUi) > 0.02f) volumeUi = current
+        }
+    }
+
+    var dragging by remember { mutableStateOf(false) }
+    var dragPosition by remember { mutableFloatStateOf(0f) }
+
+    val currentSliderVal = if (dragging) dragPosition else positionMs.toFloat()
+    val maxRange = durationMs.coerceAtLeast(1L).toFloat()
+    val sliderRange = 0f..maxRange
+    val sliderState = remember(sliderRange) { SliderState(value = currentSliderVal, trackRange = sliderRange) }
+    sliderState.value = currentSliderVal.coerceIn(sliderRange)
+
+    var volumeDragging by remember { mutableStateOf(false) }
+    var volumeDragPosition by remember { mutableFloatStateOf(0f) }
+    val currentVolumeVal = if (volumeDragging) volumeDragPosition else volumeUi * maxVol
+    val volumeRange = 0f..maxVol
+    val volumeSliderState = remember(maxVol) { SliderState(value = currentVolumeVal, trackRange = volumeRange) }
+    volumeSliderState.value = currentVolumeVal.coerceIn(volumeRange)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom)),
+    ) {
+        Slider(
+            state = sliderState,
+            onValueChange = { dragging = true; dragPosition = it },
+            onValueChangeFinished = { dragging = false; onSeek(dragPosition.toLong()) },
+            thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+            track = { state ->
+                PlayerSliderTrack(
+                    sliderState = state,
+                    trackHeight = 5.dp,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val displayPos = if (dragging) dragPosition.toLong() else positionMs
+            Text(formatTime(displayPos), color = Color.White.copy(0.80f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(audioInfo, color = Color.White.copy(0.65f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text("-" + formatTime((durationMs - displayPos).coerceAtLeast(0L)), color = Color.White.copy(0.80f), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Playback controls (Apple Music iOS bold solid icons, no circle background, as in screenshot)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Previous Button (◀◀ double arrows)
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(
+                        interactionSource = prevInteraction,
+                        indication = ripple(bounded = false, radius = 32.dp),
+                        onClick = onPrev,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_apple_backward),
+                    contentDescription = "Previous",
+                    tint = Color.White,
+                    modifier = Modifier.size(38.dp),
+                )
+            }
+
+            // Play / Pause Button (▶ / ❚❚ large solid white icon)
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .clickable(
+                        interactionSource = playInteraction,
+                        indication = ripple(bounded = false, radius = 38.dp),
+                        onClick = onPlayPause,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(if (isPlaying) R.drawable.ic_apple_pause else R.drawable.ic_apple_play),
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(52.dp),
+                )
+            }
+
+            // Next Button (▶▶ double arrows)
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable(
+                        interactionSource = nextInteraction,
+                        indication = ripple(bounded = false, radius = 32.dp),
+                        onClick = onNext,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_apple_forward),
+                    contentDescription = "Next",
+                    tint = Color.White,
+                    modifier = Modifier.size(38.dp),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // System volume slider
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.volume_down), null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
+            Slider(
+                state = volumeSliderState,
+                onValueChange = { newVal ->
+                    volumeDragging = true
+                    volumeDragPosition = newVal
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVal.roundToInt().coerceIn(0, maxVol.toInt()), 0)
+                },
+                onValueChangeFinished = {
+                    volumeDragging = false
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volumeDragPosition.roundToInt().coerceIn(0, maxVol.toInt()), 0)
+                },
+                thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                track = { state ->
+                    PlayerSliderTrack(
+                        sliderState = state,
+                        trackHeight = 5.dp,
+                        colors = SliderDefaults.colors(
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                        ),
+                    )
+                },
+                modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+            )
+            Icon(painterResource(R.drawable.volume_up), null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Mode switch bar: Lyrics | Audio Output (AirPlay / Bluetooth / Cast) | Queue ("Continue Music")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Lyrics Toggle
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (mode == NowPlayingMode.LYRICS) Color.White.copy(alpha = 0.22f)
+                        else Color.Transparent,
+                    )
+                    .let {
+                        if (mode == NowPlayingMode.LYRICS) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        else it
+                    }
+                    .clickable(
+                        interactionSource = lyricsInteraction,
+                        indication = ripple(bounded = true, radius = 25.dp),
+                        onClick = onLyricsClick,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.lyrics),
+                    contentDescription = "Lyrics",
+                    tint = if (mode == NowPlayingMode.LYRICS) Color.White else Color.White.copy(0.75f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+
+            // Audio Output / AirPlay / Bluetooth / Google Cast
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                        else Color.Transparent,
+                    )
+                    .let {
+                        if (isCasting || isBluetoothActive) it.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.40f), CircleShape)
+                        else it
+                    }
+                    .clickable(
+                        interactionSource = castInteraction,
+                        indication = ripple(bounded = true, radius = 25.dp),
+                        onClick = onCastClick,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(
+                        when {
+                            isCasting -> R.drawable.cast_connected
+                            isBluetoothActive -> R.drawable.bluetooth
+                            else -> R.drawable.ic_apple_airplay
+                        }
+                    ),
+                    contentDescription = "Audio Output",
+                    tint = if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary else Color.White.copy(0.75f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+
+            // Queue Toggle ("Continue Music")
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (mode == NowPlayingMode.QUEUE) Color.White.copy(alpha = 0.22f)
+                        else Color.Transparent,
+                    )
+                    .let {
+                        if (mode == NowPlayingMode.QUEUE) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        else it
+                    }
+                    .clickable(
+                        interactionSource = queueInteraction,
+                        indication = ripple(bounded = true, radius = 25.dp),
+                        onClick = onQueueClick,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.queue_music),
+                    contentDescription = "Continue Playing",
+                    tint = if (mode == NowPlayingMode.QUEUE) Color.White else Color.White.copy(0.75f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
+}

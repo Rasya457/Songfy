@@ -181,6 +181,9 @@ import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.playback.queues.YouTubeQueue
 import com.metrolist.music.ui.component.AccountSettingsDialog
 import com.metrolist.music.ui.component.AppNavigationBar
+import com.metrolist.music.ui.component.LiquidGlassBottomBar
+import com.metrolist.music.ui.component.rememberLiquidNavState
+import com.metrolist.music.ui.component.LocalLiquidNavState
 import com.metrolist.music.ui.component.AppNavigationRail
 import com.metrolist.music.ui.component.BottomSheetMenu
 import com.metrolist.music.ui.component.BottomSheetPage
@@ -837,6 +840,8 @@ class MainActivity : FragmentActivity() {
                         0.dp
                     }
 
+                val liquidNavState = rememberLiquidNavState()
+
                 val navigationBarHeight by animateDpAsState(
                     targetValue = if (shouldShowNavigationBar && !showRail) NavigationBarHeight else 0.dp,
                     animationSpec = NavigationBarAnimationSpec,
@@ -893,6 +898,7 @@ class MainActivity : FragmentActivity() {
 
                 // Navigation tracking
                 LaunchedEffect(navBackStackEntry) {
+                    liquidNavState.expand()
                     if (inSearchScreen) {
                         val searchQuery =
                             SearchRoutes.decodeQuery(
@@ -1039,6 +1045,7 @@ class MainActivity : FragmentActivity() {
                     LocalContentColor provides if (pureBlack) Color.White else contentColorFor(MaterialTheme.colorScheme.surface),
                     LocalPlayerConnection provides playerConnection,
                     LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
+                    LocalLiquidNavState provides liquidNavState,
                     LocalDownloadUtil provides downloadUtil,
                     LocalShimmerTheme provides ShimmerTheme,
                     LocalSyncUtils provides syncUtils,
@@ -1208,60 +1215,34 @@ class MainActivity : FragmentActivity() {
                                             state = playerBottomSheetState,
                                             navController = navController,
                                             pureBlack = pureBlack,
+                                            hideCollapsedContent = true,
                                         )
                                     }
 
-                                    AppNavigationBar(
-                                        navigationItems = navigationItems,
-                                        currentRoute = currentRoute,
-                                        onItemClick = onNavItemClick,
-                                        pureBlack = pureBlack,
-                                        slimNav = slimNav,
-                                        onSearchLongClick = onSearchLongClick,
-                                        onHomeLongHold = { showAccountDialog = true },
-                                        modifier =
-                                            Modifier
-                                                .align(Alignment.BottomCenter)
-                                                .height(bottomInset + navPadding)
-                                                // Use graphicsLayer instead of offset to avoid recomposition
-                                                // graphicsLayer runs during draw phase, not composition phase
-                                                .graphicsLayer {
-                                                    val navBarHeightPx = navigationBarHeight.toPx()
-                                                    val totalHeightPx = navBarTotalHeight.toPx()
-
-                                                    translationY =
-                                                        if (navBarHeightPx == 0f) {
-                                                            totalHeightPx
-                                                        } else {
-                                                            // Read progress only during draw phase
-                                                            val progress = playerBottomSheetState.progress.coerceIn(0f, 1f)
-                                                            val slideOffset = totalHeightPx * progress
-                                                            val hideOffset =
-                                                                totalHeightPx * (1 - navBarHeightPx / NavigationBarHeight.toPx())
-                                                            slideOffset + hideOffset
-                                                        }
-                                                },
-                                    )
-
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .align(Alignment.BottomCenter)
-                                                .height(bottomInsetDp)
-                                                // Use graphicsLayer for background color changes
-                                                .graphicsLayer {
-                                                    val progress = playerBottomSheetState.progress
-                                                    alpha =
-                                                        if (progress > 0f ||
-                                                            (useNewMiniPlayerDesign && !shouldShowNavigationBar)
-                                                        ) {
-                                                            0f
-                                                        } else {
-                                                            1f
-                                                        }
-                                                }.background(baseBg),
-                                    )
+                                    if (shouldShowNavigationBar) {
+                                        LiquidGlassBottomBar(
+                                            state = liquidNavState,
+                                            navigationItems = navigationItems,
+                                            currentRoute = currentRoute,
+                                            onNavItemClick = onNavItemClick,
+                                            playerConnection = activePlayerConnection,
+                                            showMiniPlayer = activePlayerConnection != null && !playerBottomSheetState.isDismissed,
+                                            onPlayerClick = {
+                                                playerBottomSheetState.expandSoft()
+                                            },
+                                            onSearchLongClick = onSearchLongClick,
+                                            onHomeLongHold = { showAccountDialog = true },
+                                            modifier =
+                                                Modifier
+                                                    .align(Alignment.BottomCenter)
+                                                    .padding(bottom = bottomInsetDp + 8.dp)
+                                                    .graphicsLayer {
+                                                        val progress = playerBottomSheetState.progress.coerceIn(0f, 1f)
+                                                        alpha = (1f - progress * 3f).coerceIn(0f, 1f)
+                                                        translationY = progress * 96.dp.toPx()
+                                                    },
+                                        )
+                                    }
                                 }
                             } else {
                                 if (currentRoute != "wrapped") {
@@ -1292,6 +1273,7 @@ class MainActivity : FragmentActivity() {
                         modifier =
                             Modifier
                                 .fillMaxSize()
+                                .nestedScroll(liquidNavState.nestedScrollConnection)
                                 .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
                     ) {
                         Row(Modifier.fillMaxSize()) {
@@ -1388,7 +1370,8 @@ class MainActivity : FragmentActivity() {
                                             slideOutHorizontally { it / 8 } + fadeOut(tween(200))
                                         }
                                     },
-                                    modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                                    modifier = Modifier.nestedScroll(liquidNavState.nestedScrollConnection)
+                                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
                                 ) {
                                     navigationBuilder(
                                         navController = navController,

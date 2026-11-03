@@ -211,6 +211,7 @@ fun BottomSheetPlayer(
     navController: NavController,
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
+    hideCollapsedContent: Boolean = false,
 ) {
     val context = LocalContext.current
     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -932,11 +933,13 @@ fun BottomSheetPlayer(
                 null
             },
         collapsedContent = {
-            MiniPlayer(
+            if (!hideCollapsedContent) {
+                MiniPlayer(
                 positionState = positionState,
                 durationState = durationState,
                 onClick = { state.expandSoft() },
             )
+            }
         },
     ) {
         val controlsContent: @Composable ColumnScope.(MediaMetadata) -> Unit = { mediaMetadata ->
@@ -1980,59 +1983,19 @@ fun BottomSheetPlayer(
             }
 
             else -> {
-                val bottomPadding by animateDpAsState(
-                    targetValue = if (isFullScreen) 0.dp else queueSheetState.collapsedBound,
-                    label = "bottomPadding",
+                MornyeNowPlaying(
+                    state = state,
+                    positionState = positionState,
+                    durationState = durationState,
+                    effectivePositionProvider = { if (isCasting) castPosition else playerConnection.player.currentPosition },
+                    onClose = { state.collapseSoft() },
+                    modifier = Modifier.fillMaxSize(),
                 )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier =
-                        Modifier
-                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
-                            .padding(bottom = bottomPadding)
-                            .animateContentSize(),
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        // Remember lambdas to prevent unnecessary recomposition
-                        val currentSliderPosition by rememberUpdatedState(sliderPosition)
-                        val sliderPositionProvider = remember { { currentSliderPosition } }
-                        val isExpandedProvider = remember(state) { { state.isExpanded } }
-                        AnimatedContent(
-                            targetState = showInlineLyrics,
-                            label = "Lyrics",
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        ) { showLyrics ->
-                            if (showLyrics) {
-                                InlineLyricsView(
-                                    mediaMetadata = mediaMetadata,
-                                    showLyrics = showLyrics,
-                                    positionProvider = { effectivePosition },
-                                )
-                            } else {
-                                Thumbnail(
-                                    sliderPositionProvider = sliderPositionProvider,
-                                    modifier = Modifier.nestedScroll(state.preUpPostDownNestedScrollConnection),
-                                    isPlayerExpanded = isExpandedProvider,
-                                    isListenTogetherGuest = isListenTogetherGuest,
-                                )
-                            }
-                        }
-                    }
-
-                    mediaMetadata?.let {
-                        controlsContent(it)
-                    }
-
-                    Spacer(Modifier.height(30.dp))
-                }
             }
         }
 
         AnimatedVisibility(
-            visible = !isFullScreen,
+            visible = !isFullScreen && LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = shrinkVertically(shrinkTowards = Alignment.Top) + slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         ) {
@@ -2245,3 +2208,4 @@ private fun PlayerMoreMenuButton(
         )
     }
 }
+

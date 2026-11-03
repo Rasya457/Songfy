@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Metrolist Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  */
@@ -70,6 +70,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -695,7 +696,7 @@ fun HomeScreen(
     val (randomizeHomeOrder) = rememberPreference(RandomizeHomeOrderKey, true)
     val autoRadioQueue by rememberPreference(AutoRadioQueueKey, defaultValue = true)
 
-    LaunchedEffect(Unit) { viewModel.loadHomeData() }
+    LaunchedEffect(Unit) { withFrameNanos { }; viewModel.loadHomeData() }
 
     val shouldShowWrappedCard by viewModel.showWrappedCard.collectAsStateWithLifecycle()
     val wrappedState by viewModel.wrappedManager.state.collectAsStateWithLifecycle()

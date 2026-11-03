@@ -1,0 +1,97 @@
+{
+  "project_info": {
+    "project_number": "472815180109",
+    "project_id": "songfyy",
+    "storage_bucket": "songfyy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472815180109:android:67f57a4fd430f665cc3f04",
+        "android_client_info": {
+          "package_name": "com.company.songfy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCROpehrMJb9RAU2jos7k-iEPyNN1pb4Nc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472815180109:android:67f57a4fd430f665cc3f04",
+        "android_client_info": {
+          "package_name": "com.metrolist.music"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCROpehrMJb9RAU2jos7k-iEPyNN1pb4Nc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472815180109:android:67f57a4fd430f665cc3f04",
+        "android_client_info": {
+          "package_name": "com.metrolist.music.debug"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCROpehrMJb9RAU2jos7k-iEPyNN1pb4Nc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "472815180109-4eqe8er7rsrlcc6j9jqqoibo3g02f8dj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

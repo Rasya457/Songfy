@@ -208,20 +208,25 @@ class BottomSheetState(
         }
     }
 
+    private val criticallyDampedSpring = spring<Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 195f,
+    )
+
     private fun collapse() {
-        collapse(SpringSpec())
+        collapse(criticallyDampedSpring)
     }
 
     private fun expand() {
-        expand(SpringSpec())
+        expand(criticallyDampedSpring)
     }
 
     fun collapseSoft() {
-        collapse(spring(stiffness = Spring.StiffnessMediumLow))
+        collapse(criticallyDampedSpring)
     }
 
     fun expandSoft() {
-        expand(spring(stiffness = Spring.StiffnessMediumLow))
+        expand(criticallyDampedSpring)
     }
 
     fun dismiss() {
@@ -243,13 +248,13 @@ class BottomSheetState(
 
     fun performFling(velocity: Float, onDismiss: (() -> Unit)?) {
         if (velocity > 250) {
-            expand()
+            expand(criticallyDampedSpring)
         } else if (velocity < -250) {
             if (value < collapsedBound && onDismiss != null) {
                 dismiss()
                 onDismiss.invoke()
             } else {
-                collapse()
+                collapse(criticallyDampedSpring)
             }
         } else {
             val l0 = dismissedBound
@@ -263,12 +268,12 @@ class BottomSheetState(
                         dismiss()
                         onDismiss.invoke()
                     } else {
-                        collapse()
+                        collapse(criticallyDampedSpring)
                     }
                 }
 
-                in l1..l2 -> collapse()
-                in l2..l3 -> expand()
+                in l1..l2 -> collapse(criticallyDampedSpring)
+                in l2..l3 -> expand(criticallyDampedSpring)
                 else -> Unit
             }
         }
