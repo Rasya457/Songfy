@@ -20,6 +20,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
 import com.metrolist.music.ui.utils.CoverBlurHelper
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.hypot
 import kotlin.math.pow
 
 import android.content.BroadcastReceiver
@@ -996,6 +1003,50 @@ private fun QueueContent(
 // Bottom Controls
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * instantTap — Custom pointer input modifier that guarantees immediate 1-tap responsiveness
+ * for critical player actions inside draggable bottom sheets.
+ *
+ * Prevents parent drag gestures (like BottomSheet's detectVerticalDragGestures) from stealing
+ * touches caused by natural thumb rolling during tap-down.
+ */
+private fun Modifier.instantTap(
+    interactionSource: MutableInteractionSource? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier = this.pointerInput(enabled, onClick) {
+    if (!enabled) return@pointerInput
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        down.consume()
+        val press = PressInteraction.Press(down.position)
+        interactionSource?.tryEmit(press)
+        var movedFar = false
+        val maxSlop = viewConfiguration.touchSlop * 2.5f
+
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Main)
+            val change = event.changes.firstOrNull { it.id == down.id }
+            if (change == null || !change.pressed) {
+                change?.consume()
+                interactionSource?.tryEmit(
+                    if (!movedFar) PressInteraction.Release(press) else PressInteraction.Cancel(press)
+                )
+                if (!movedFar) {
+                    onClick()
+                }
+                break
+            }
+            val dx = change.position.x - down.position.x
+            val dy = change.position.y - down.position.y
+            if (hypot(dx, dy) > maxSlop) {
+                movedFar = true
+            }
+            change.consume()
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BottomControls(
@@ -1233,99 +1284,123 @@ private fun BottomControls(
         Spacer(modifier = Modifier.height(6.dp))
 
         // Mode switch bar: Lyrics | Audio Output (AirPlay / Bluetooth / Cast) | Queue ("Continue Music")
+        // Each button has an expanded 1/3-width touch container with instantTap to ensure 100% 1-tap responsiveness
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Lyrics Toggle
+            // 1. Lyrics Toggle (1/3 of row)
             Box(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (mode == NowPlayingMode.LYRICS) Color.White.copy(alpha = 0.22f)
-                        else Color.Transparent,
-                    )
-                    .let {
-                        if (mode == NowPlayingMode.LYRICS) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                        else it
-                    }
-                    .clickable(
+                    .weight(1f)
+                    .height(60.dp)
+                    .instantTap(
                         interactionSource = lyricsInteraction,
-                        indication = ripple(bounded = true, radius = 25.dp),
                         onClick = onLyricsClick,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.lyrics),
-                    contentDescription = "Lyrics",
-                    tint = if (mode == NowPlayingMode.LYRICS) Color.White else Color.White.copy(0.75f),
-                    modifier = Modifier.size(24.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (mode == NowPlayingMode.LYRICS) Color.White.copy(alpha = 0.22f)
+                            else Color.Transparent,
+                        )
+                        .let {
+                            if (mode == NowPlayingMode.LYRICS) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                            else it
+                        }
+                        .indication(lyricsInteraction, ripple(bounded = true, radius = 25.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.lyrics),
+                        contentDescription = "Lyrics",
+                        tint = if (mode == NowPlayingMode.LYRICS) Color.White else Color.White.copy(0.75f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
 
-            // Audio Output / AirPlay / Bluetooth / Google Cast
+            // 2. Audio Output / AirPlay / Bluetooth / Google Cast (1/3 of row)
             Box(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                        else Color.Transparent,
-                    )
-                    .let {
-                        if (isCasting || isBluetoothActive) it.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.40f), CircleShape)
-                        else it
-                    }
-                    .clickable(
+                    .weight(1f)
+                    .height(60.dp)
+                    .instantTap(
                         interactionSource = castInteraction,
-                        indication = ripple(bounded = true, radius = 25.dp),
                         onClick = onCastClick,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(
-                        when {
-                            isCasting -> R.drawable.cast_connected
-                            isBluetoothActive -> R.drawable.bluetooth
-                            else -> R.drawable.ic_apple_airplay
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                            else Color.Transparent,
+                        )
+                        .let {
+                            if (isCasting || isBluetoothActive) it.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.40f), CircleShape)
+                            else it
                         }
-                    ),
-                    contentDescription = "Audio Output",
-                    tint = if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary else Color.White.copy(0.75f),
-                    modifier = Modifier.size(24.dp),
-                )
+                        .indication(castInteraction, ripple(bounded = true, radius = 25.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            when {
+                                isCasting -> R.drawable.cast_connected
+                                isBluetoothActive -> R.drawable.bluetooth
+                                else -> R.drawable.ic_apple_airplay
+                            }
+                        ),
+                        contentDescription = "Audio Output",
+                        tint = if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary else Color.White.copy(0.75f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
 
-            // Queue Toggle ("Continue Music")
+            // 3. Queue Toggle ("Continue Music") (1/3 of row)
             Box(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (mode == NowPlayingMode.QUEUE) Color.White.copy(alpha = 0.22f)
-                        else Color.Transparent,
-                    )
-                    .let {
-                        if (mode == NowPlayingMode.QUEUE) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
-                        else it
-                    }
-                    .clickable(
+                    .weight(1f)
+                    .height(60.dp)
+                    .instantTap(
                         interactionSource = queueInteraction,
-                        indication = ripple(bounded = true, radius = 25.dp),
                         onClick = onQueueClick,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.queue_music),
-                    contentDescription = "Continue Playing",
-                    tint = if (mode == NowPlayingMode.QUEUE) Color.White else Color.White.copy(0.75f),
-                    modifier = Modifier.size(24.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (mode == NowPlayingMode.QUEUE) Color.White.copy(alpha = 0.22f)
+                            else Color.Transparent,
+                        )
+                        .let {
+                            if (mode == NowPlayingMode.QUEUE) it.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                            else it
+                        }
+                        .indication(queueInteraction, ripple(bounded = true, radius = 25.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.queue_music),
+                        contentDescription = "Continue Playing",
+                        tint = if (mode == NowPlayingMode.QUEUE) Color.White else Color.White.copy(0.75f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
 
@@ -1344,19 +1419,21 @@ private fun BottomControls(
         }
         val displayDeviceText = currentDeviceName ?: stringResource(R.string.this_phone)
 
-        Text(
-            text = displayDeviceText,
-            color = Color.White.copy(alpha = 0.65f),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+        val deviceInteraction = remember { MutableInteractionSource() }
+        Box(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(bottom = 6.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onCastClick,
-                ),
-        )
+                .height(32.dp)
+                .instantTap(interactionSource = deviceInteraction, onClick = onCastClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = displayDeviceText,
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
     }
 }
