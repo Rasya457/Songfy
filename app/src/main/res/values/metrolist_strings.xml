@@ -994,4 +994,7 @@
     <string name="stream_source_web_creator_desc">Creator web client.</string>
     <string name="top_result">Top result</string>
     <string name="other">Other</string>
+    <string name="lyrics_arriving_soon">Words are arriving soon</string>
+    <string name="this_phone">This phone</string>
+    <string name="playing_from">Playing from %1$s</string>
 </resources>

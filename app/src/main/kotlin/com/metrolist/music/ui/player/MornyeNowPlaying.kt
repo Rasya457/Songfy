@@ -9,6 +9,19 @@
 
 package com.metrolist.music.ui.player
 
+import android.graphics.Bitmap
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.asImageBitmap
+import com.metrolist.music.ui.utils.CoverBlurHelper
+import kotlin.math.pow
+
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -211,13 +224,60 @@ fun MornyeNowPlaying(
             .build()
     }
 
-    val blurImageRequest = remember(mediaMetadata?.thumbnailUrl) {
-        ImageRequest.Builder(context)
-            .data(mediaMetadata?.thumbnailUrl)
-            .size(100, 100) // Downsample to 100x100: makes full-screen GPU blur instantaneous
-            .allowHardware(false)
-            .crossfade(200)
-            .build()
+    // Pre-computed artwork blur (worker thread 3-pass box blur, LruCache(8), 360ms crossfade)
+    var currentBlurredBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var previousBlurredBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val crossfadeAnim = remember { Animatable(1f) }
+
+    LaunchedEffect(mediaMetadata?.thumbnailUrl) {
+        val url = mediaMetadata?.thumbnailUrl
+        if (url.isNullOrBlank()) {
+            currentBlurredBitmap = null
+            previousBlurredBitmap = null
+            return@LaunchedEffect
+        }
+        val fastCached = CoverBlurHelper.getCached(url)
+        val targetBitmap = fastCached ?: CoverBlurHelper.getOrComputeBlur(context, url)
+        if (targetBitmap != null && targetBitmap != currentBlurredBitmap) {
+            if (currentBlurredBitmap != null) {
+                previousBlurredBitmap = currentBlurredBitmap
+                currentBlurredBitmap = targetBitmap
+                crossfadeAnim.snapTo(0f)
+                crossfadeAnim.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+                )
+                previousBlurredBitmap = null
+            } else {
+                currentBlurredBitmap = targetBitmap
+                crossfadeAnim.snapTo(1f)
+            }
+        }
+    }
+
+    // Smootherstep (6t^5 - 15t^4 + 10t^3) gradient stops for feathering sharp hero artwork into backdrop
+    val smootherstepStops = remember {
+        val stops = mutableListOf<Pair<Float, Color>>()
+        stops.add(0.0f to Color.White)
+        stops.add(0.40f to Color.White)
+        val steps = 16
+        for (i in 1..steps) {
+            val t = i.toFloat() / steps
+            val fraction = 0.40f + 0.60f * t
+            val st = t * t * t * (t * (t * 6f - 15f) + 10f)
+            val alpha = (1f - st).coerceIn(0f, 1f)
+            stops.add(fraction to Color.White.copy(alpha = alpha))
+        }
+        stops.toTypedArray()
+    }
+
+    // 8-step Top Scrim gradient behind status bar with alpha proportional to (1 - progress)^1.5
+    val topScrimStops = remember {
+        Array(8) { i ->
+            val progress = i / 7f
+            val a = (1f - progress).toDouble().pow(1.5).toFloat() * 0.75f
+            progress to Color.Black.copy(alpha = a)
+        }
     }
 
     // Lyrics caching: check LruCache first (0ms), otherwise parse off the UI thread
@@ -339,30 +399,84 @@ fun MornyeNowPlaying(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black), // Layer 1: Pure black base
     ) {
-        // Ambient blurred background artwork (cached & downsampled for 60fps smoothness)
-        if (mediaMetadata?.thumbnailUrl != null) {
-            AsyncImage(
-                model = blurImageRequest,
+        // ── Layer 2: Backdrop Blur (Pre-blurred 128px, 3-pass worker box blur, LruCache(8), 360ms crossfade) ──
+        val prevBmp = previousBlurredBitmap
+        val currBmp = currentBlurredBitmap
+
+        if (prevBmp != null && !prevBmp.isRecycled) {
+            Image(
+                bitmap = prevBmp.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .let {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.blur(80.dp) else it
-                    }
-                    .scale(1.25f),
+                    .scale(1.05f),
             )
         }
-        // Dark tint overlay
+        if (currBmp != null && !currBmp.isRecycled) {
+            Image(
+                bitmap = currBmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.05f)
+                    .graphicsLayer {
+                        alpha = if (prevBmp != null) crossfadeAnim.value else 1f
+                    },
+            )
+        }
+        // Dark contrast overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.50f)),
+                .background(Color.Black.copy(alpha = 0.40f)),
         )
 
-        // Main vertical layout (smoothly blurs and dims when 3-dots menu is opened)
+        // ── Layer 3: Hero Banner (sharp artwork full-bleed, down to 58% height, smootherstep feather) ──
+        if (mediaMetadata?.thumbnailUrl != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.58f)
+                    .graphicsLayer {
+                        alpha = (1f - transitionProgress).coerceIn(0f, 1f)
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colorStops = smootherstepStops,
+                                startY = 0f,
+                                endY = size.height,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    },
+            ) {
+                AsyncImage(
+                    model = coverImageRequest,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // ── Layer 4: Top Scrim (8-step gradient behind status bar) ──
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+                .background(
+                    Brush.verticalGradient(colorStops = topScrimStops),
+                ),
+        )
+
+        // ── Layer 5: Content Layer ──
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -379,174 +493,227 @@ fun MornyeNowPlaying(
                     alpha = 1f - (overlayAnimProgress * 0.20f)
                 },
         ) {
-            // Drag handle pill
-            Box(
+            // Drag handle pill and "Playing from ..." header text
+            Column(
                 modifier = Modifier
-                    .padding(top = 10.dp, bottom = 4.dp)
-                    .size(width = 36.dp, height = 4.5.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.40f))
-                    .align(Alignment.CenterHorizontally)
-                    .clickable(
-                        interactionSource = closeInteraction,
-                        indication = null,
-                    ) { onClose() },
-            )
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 36.dp, height = 4.5.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.40f))
+                        .clickable(
+                            interactionSource = closeInteraction,
+                            indication = null,
+                        ) { onClose() },
+                )
 
-            // ── Morphing Center Area (Cover + Title + Lyrics / Queue) ──
-            BoxWithConstraints(
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val albumText = mediaMetadata?.album?.title?.takeIf { it.isNotBlank() } ?: mediaMetadata?.title ?: ""
+                if (albumText.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.playing_from, albumText),
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            // Center area: Morphs between Hero Player mode & Compact Lyrics/Queue mode
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
             ) {
-                val totalWidth = maxWidth
-                val totalHeight = maxHeight
-
-                // Dimensions for COMPACT state (Lyrics / Queue mode)
-                val compactArtSize = 56.dp
-                val compactArtX = 20.dp
-                val compactArtY = 8.dp
-                val compactArtCorner = 12.dp
-
-                // Dimensions for PLAYER state
-                val playerTitleHeight = 58.dp
-                val playerTitleY = (totalHeight - playerTitleHeight - 10.dp).coerceAtLeast(0.dp)
-
-                // Available vertical height for album art (above title)
-                val availableHeightForArt = playerTitleY - 12.dp
-                val playerArtSize = minOf(totalWidth - 52.dp, availableHeightForArt - 24.dp).coerceIn(160.dp, 330.dp)
-                val playerArtX = (totalWidth - playerArtSize) / 2
-                val playerArtY = ((availableHeightForArt - playerArtSize) / 2).coerceAtLeast(8.dp)
-                val playerArtCorner = 24.dp
-
-                // Smoothly animated coordinates and size
-                val currentArtSize = lerp(playerArtSize, compactArtSize, transitionProgress)
-                val currentArtX = lerp(playerArtX, compactArtX, transitionProgress)
-                val currentArtY = lerp(playerArtY, compactArtY, transitionProgress)
-                val currentArtCorner = lerp(playerArtCorner, compactArtCorner, transitionProgress)
-
-                // Layer 1: Lyrics / Queue Content (beneath compact header)
+                // When in LYRICS or QUEUE mode
                 if (transitionProgress > 0.01f) {
-                    Box(
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = compactArtY + compactArtSize + 8.dp)
-                            .fillMaxHeight()
-                            .graphicsLayer { alpha = ((transitionProgress - 0.3f) * 1.45f).coerceIn(0f, 1f) },
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = ((transitionProgress - 0.2f) * 1.25f).coerceIn(0f, 1f) },
                     ) {
-                        if (mode == NowPlayingMode.LYRICS) {
-                            SyncedLyricsView(
-                                lines = parsedLyrics,
-                                positionProvider = { currentEffectiveProvider() + lyricsOffset },
-                                onSeek = { playerConnection.player.seekTo((it - lyricsOffset).coerceAtLeast(0L)) },
-                                isLoading = lrcText == null,
-                                modifier = Modifier.fillMaxSize(),
+                        // Compact header in Lyrics / Queue mode
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 8.dp)
+                                .clickable(
+                                    interactionSource = artTitleInteraction,
+                                    indication = null,
+                                    onClick = { mode = NowPlayingMode.PLAYER },
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncImage(
+                                model = coverImageRequest,
+                                contentDescription = title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
                             )
-                        } else if (mode == NowPlayingMode.QUEUE) {
-                            QueueContent(
-                                playerConnection = playerConnection,
-                                shuffleModeEnabled = shuffleModeEnabled,
-                                repeatMode = repeatMode,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = artist,
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(
+                                onClick = onMoreClick,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.more_horiz),
+                                    contentDescription = "More",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
+
+                        // Body: Synced Lyrics or Queue
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                        ) {
+                            if (mode == NowPlayingMode.LYRICS) {
+                                SyncedLyricsView(
+                                    lines = parsedLyrics,
+                                    positionProvider = { currentEffectiveProvider() + lyricsOffset },
+                                    onSeek = { playerConnection.player.seekTo((it - lyricsOffset).coerceAtLeast(0L)) },
+                                    isLoading = lrcText == null,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else if (mode == NowPlayingMode.QUEUE) {
+                                QueueContent(
+                                    playerConnection = playerConnection,
+                                    shuffleModeEnabled = shuffleModeEnabled,
+                                    repeatMode = repeatMode,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 }
 
-                // Layer 2: Title, artist, star and three-dots (glides upward to top-right when mode changes)
-                val titleX = lerp(24.dp, compactArtX + compactArtSize + 12.dp, transitionProgress)
-                val titleY = lerp(playerTitleY, compactArtY, transitionProgress)
-                val titleBlockHeight = lerp(playerTitleHeight, compactArtSize, transitionProgress)
-                val titleSize = androidx.compose.ui.util.lerp(20f, 15f, transitionProgress).sp
-                val artistSize = androidx.compose.ui.util.lerp(15f, 13f, transitionProgress).sp
-                val actionIconSize = lerp(24.dp, 22.dp, transitionProgress)
-
-                Row(
-                    modifier = Modifier
-                        .offset(x = titleX, y = titleY)
-                        .width(totalWidth - titleX - lerp(24.dp, 16.dp, transitionProgress))
-                        .height(titleBlockHeight)
-                        .padding(top = lerp(0.dp, 10.dp, transitionProgress)),
-                    verticalAlignment = Alignment.Top,
-                ) {
+                // When in PLAYER mode: Title, artist, ⋯ button and single-line lyrics preview
+                if (transitionProgress < 0.99f) {
                     Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(top = lerp(5.dp, 0.dp, transitionProgress))
-                            .clickable(
-                                interactionSource = artTitleInteraction,
-                                indication = null,
-                                enabled = !isPlayerMode,
-                                onClick = { mode = NowPlayingMode.PLAYER },
-                            ),
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = ((1f - transitionProgress - 0.2f) * 1.25f).coerceIn(0f, 1f) },
+                        verticalArrangement = Arrangement.Bottom,
                     ) {
+                        // Title, Artist, and Circular ⋯ Button (as in screenshot)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = title,
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = artist,
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            // Circular ⋯ button
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.22f))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(bounded = true, radius = 18.dp),
+                                        onClick = onMoreClick,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.more_horiz),
+                                    contentDescription = "More options",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        // Single-line lyrics preview ("Kata-katanya segera tiba" / synced text)
+                        val currentSyncedLineText = remember(parsedLyrics, positionMs) {
+                            if (parsedLyrics.isEmpty()) null
+                            else {
+                                val line = parsedLyrics.find { positionMs in it.startMs..it.endMs }
+                                    ?: parsedLyrics.lastOrNull { positionMs >= it.startMs }
+                                line?.text?.takeIf { it.isNotBlank() }
+                            }
+                        }
+                        val previewText = currentSyncedLineText
+                            ?: if (Locale.getDefault().language == "in" || Locale.getDefault().language == "id") "Kata-katanya segera tiba"
+                            else stringResource(R.string.lyrics_arriving_soon)
+
                         Text(
-                            text = title,
-                            color = Color.White,
-                            fontSize = titleSize,
-                            fontWeight = FontWeight.Bold,
-                            fontStyle = FontStyle.Italic,
+                            text = previewText,
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    mode = NowPlayingMode.LYRICS
+                                },
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = artist,
-                            color = Color.White.copy(alpha = 0.65f),
-                            fontSize = artistSize,
-                            fontWeight = FontWeight.Medium,
-                            fontStyle = FontStyle.Italic,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = { playerConnection.toggleLike() },
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(if (isFavorite) R.drawable.star else R.drawable.star_border),
-                            contentDescription = null,
-                            tint = if (isFavorite) MaterialTheme.colorScheme.primary else Color.White,
-                            modifier = Modifier.size(actionIconSize),
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onMoreClick,
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.more_horiz),
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(actionIconSize),
-                        )
-                    }
-                }
-
-                // Layer 4: Morphing Cover Image (animates size & position smoothly)
-                Box(
-                    modifier = Modifier
-                        .offset(x = currentArtX, y = currentArtY)
-                        .size(currentArtSize)
-                        .clip(RoundedCornerShape(currentArtCorner))
-                        .clickable(
-                            interactionSource = artTitleInteraction,
-                            indication = null,
-                            enabled = !isPlayerMode,
-                            onClick = { mode = NowPlayingMode.PLAYER },
-                        ),
-                ) {
-                    AsyncImage(
-                        model = coverImageRequest,
-                        contentDescription = title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
                 }
             }
 
@@ -1161,5 +1328,35 @@ private fun BottomControls(
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        val currentDeviceName = remember(isCasting, isBluetoothActive, connectedBluetoothDevice) {
+            when {
+                isCasting -> "Google Cast"
+                isBluetoothActive -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        connectedBluetoothDevice.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Bluetooth"
+                    } else "Bluetooth"
+                }
+                else -> null
+            }
+        }
+        val displayDeviceText = currentDeviceName ?: stringResource(R.string.this_phone)
+
+        Text(
+            text = displayDeviceText,
+            color = Color.White.copy(alpha = 0.65f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(bottom = 6.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onCastClick,
+                ),
+        )
     }
 }
