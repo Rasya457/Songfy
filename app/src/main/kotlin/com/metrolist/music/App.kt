@@ -75,24 +75,24 @@ class App :
 
         // Install crash handler first
         CrashHandler.install(this)
-        ArtistNameAliases.initialize(this)
-
-        // preferencesDataStore uses filesDir/datastore; proactive mkdir reduces failures on odd ROM states
-        try {
-            val datastoreDir = File(filesDir, "datastore")
-            if (!datastoreDir.isDirectory && !datastoreDir.mkdirs()) {
-                Timber.w("Could not create DataStore directory at ${datastoreDir.path}")
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to ensure DataStore directory")
-        }
 
         // Plant logging before extraction services initialize.
         Timber.plant(Timber.DebugTree())
         InnerTubeXPlayer.initialize(this)
 
-        // Pre-read Coil cache size on background to avoid runBlocking in newImageLoader
         applicationScope.launch(Dispatchers.IO) {
+            ArtistNameAliases.initialize(this@App)
+
+            // preferencesDataStore uses filesDir/datastore; proactive mkdir reduces failures on odd ROM states
+            try {
+                val datastoreDir = File(filesDir, "datastore")
+                if (!datastoreDir.isDirectory && !datastoreDir.mkdirs()) {
+                    Timber.w("Could not create DataStore directory at ${datastoreDir.path}")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to ensure DataStore directory")
+            }
+
             cachedCoilCacheSize = dataStore.data.map { it[MaxImageCacheSizeKey] ?: 512 }.first()
         }
 
@@ -296,9 +296,7 @@ class App :
     private var cachedCoilCacheSize: Int? = null
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
-        val cacheSize = cachedCoilCacheSize ?: runBlocking {
-            dataStore.data.map { it[MaxImageCacheSizeKey] ?: 512 }.first()
-        }
+        val cacheSize = cachedCoilCacheSize ?: 512
         return ImageLoader
             .Builder(this)
             .apply {

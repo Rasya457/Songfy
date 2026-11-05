@@ -222,6 +222,7 @@ import com.metrolist.music.widget.PlaylistWidgetReceiver
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -404,12 +405,15 @@ class MainActivity : FragmentActivity() {
         listenTogetherManager.initialize()
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            val locale =
-                dataStore[AppLanguageKey]
-                    ?.takeUnless { it == SYSTEM_DEFAULT }
-                    ?.let { Locale.forLanguageTag(it) }
-                    ?: Locale.getDefault()
-            setAppLocale(this, locale)
+            lifecycleScope.launch(Dispatchers.IO) {
+                val appLang = dataStore.data.map { it[AppLanguageKey] }.first()
+                if (appLang != null && appLang != SYSTEM_DEFAULT) {
+                    val locale = Locale.forLanguageTag(appLang)
+                    withContext(Dispatchers.Main) {
+                        setAppLocale(this@MainActivity, locale)
+                    }
+                }
+            }
         }
 
         lifecycleScope.launch {
@@ -430,6 +434,7 @@ class MainActivity : FragmentActivity() {
 
         // Defer migration and version tracking to avoid blocking first frame
         lifecycleScope.launch(Dispatchers.IO) {
+            delay(2500)
             val preferences = dataStore.data.first()
             val currentVersion = BuildConfig.BASE_VERSION_NAME
 
@@ -467,6 +472,7 @@ class MainActivity : FragmentActivity() {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
+            delay(3000)
             safeDataStoreEdit { settings ->
                 settings[LastSeenVersionKey] = BuildConfig.BASE_VERSION_NAME
             }
@@ -501,6 +507,7 @@ class MainActivity : FragmentActivity() {
         if (BuildConfig.UPDATER_AVAILABLE) {
             LaunchedEffect(checkForUpdates) {
                 if (checkForUpdates) {
+                    delay(6000)
                     val preferences = dataStore.data.first()
                     val notificationsEnabled = preferences[UpdateNotificationsEnabledKey] ?: true
                     val (releaseInfo, hasUpdate) = Updater.checkForUpdate().getOrNull() ?: (null to false)
