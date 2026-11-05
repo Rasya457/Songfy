@@ -830,10 +830,23 @@ private fun MiniPlayerContent(
             )
         }
 
-        // Next button (shrinks + fades when minimized to fit narrower pill - pure GPU transform)
+        // Next button (shrinks width + fades when minimized so Play button glides to the right)
         Box(
             modifier = Modifier
-                .size(42.dp)
+                .layout { measurable, constraints ->
+                    val p = progress.value
+                    val factor = (1f - p * 1.35f).coerceIn(0f, 1f)
+                    val targetWidth = (42.dp.toPx() * factor).roundToInt()
+                    val placeable = measurable.measure(
+                        constraints.copy(
+                            minWidth = 0,
+                            maxWidth = 42.dp.roundToPx(),
+                        )
+                    )
+                    layout(targetWidth, placeable.height) {
+                        placeable.place(0, 0)
+                    }
+                }
                 .graphicsLayer {
                     val p = progress.value
                     alpha = (1f - p * 1.8f).coerceIn(0f, 1f)
@@ -846,7 +859,11 @@ private fun MiniPlayerContent(
             Box(
                 modifier = Modifier
                     .size(42.dp)
-                    .tap(onClick = onNext),
+                    .tap(
+                        onClick = {
+                            if (progress.value < 0.3f) onNext()
+                        },
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

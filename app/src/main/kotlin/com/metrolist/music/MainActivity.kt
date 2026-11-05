@@ -880,7 +880,7 @@ class MainActivity : FragmentActivity() {
                         if (!playerBottomSheetState.isDismissed) bottom += MiniPlayerHeight
                         windowsInsets
                             .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
-                            .add(WindowInsets(top = AppBarHeight, bottom = bottom))
+                            .add(WindowInsets(top = AppBarHeight + 12.dp, bottom = bottom))
                     }
                 val topAppBarScrollBehavior =
                     appBarScrollBehavior(
@@ -1061,12 +1061,14 @@ class MainActivity : FragmentActivity() {
                                         Modifier
                                             .fillMaxWidth()
                                             .windowInsetsPadding(
-                                                if (showRail) {
-                                                    WindowInsets(left = NavigationBarHeight)
-                                                        .add(cutoutInsets.only(WindowInsetsSides.Start))
-                                                } else {
-                                                    cutoutInsets.only(WindowInsetsSides.Start + WindowInsetsSides.End)
-                                                },
+                                                windowsInsets.only(WindowInsetsSides.Top).add(
+                                                    if (showRail) {
+                                                        WindowInsets(left = NavigationBarHeight)
+                                                            .add(cutoutInsets.only(WindowInsetsSides.Start))
+                                                    } else {
+                                                        cutoutInsets.only(WindowInsetsSides.Start + WindowInsetsSides.End)
+                                                    }
+                                                )
                                             )
                                             .padding(horizontal = 16.dp, vertical = 6.dp)
                                             .songfyLiquidGlass(
