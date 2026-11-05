@@ -27,17 +27,5 @@ object PlayerSheetMotion {
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = 220f,
     )
-
-    /** Spring lift untuk GlassSelectionPill: overshoot sedikit saat ditekan */
-    val PillLiftSpring = spring<Float>(
-        dampingRatio = 0.55f,
-        stiffness = 450f,
-    )
-
-    /** Spring gerak posisi GlassSelectionPill */
-    val PillTravelSpring = spring<Float>(
-        dampingRatio = 0.78f,
-        stiffness = 300f,
-    )
 }
 

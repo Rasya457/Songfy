@@ -23,7 +23,6 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -108,18 +107,13 @@ import com.songfy.ui.SPRING_DAMPING
 import com.songfy.ui.SPRING_STIFFNESS
 import com.songfy.ui.SQUASH
 import com.songfy.ui.STRETCH
-import com.songfy.ui.SongfyLiquidBar
-import com.songfy.ui.SongfyTab
-import com.songfy.ui.rememberSongfyLiquidGlass
 import com.songfy.ui.songfyLiquidGlass
 import kotlinx.coroutines.launch
-import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // State & Models
@@ -311,22 +305,6 @@ private fun Modifier.tap(
     )
 }
 
-private fun Modifier.fadingEdges(fade: Dp = 14.dp): Modifier = this
-    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
-        val f = (fade.toPx() / size.width).coerceIn(0f, 0.5f)
-        drawRect(
-            brush = Brush.horizontalGradient(
-                0f to Color.Transparent,
-                f to Color.Black,
-                1f - f to Color.Black,
-                1f to Color.Transparent,
-            ),
-            blendMode = BlendMode.DstIn,
-        )
-    }
-
 @Composable
 internal fun Modifier.liquidGlass(
     backdrop: GlassBackdrop? = null,
@@ -355,13 +333,6 @@ internal fun Modifier.liquidGlass(
     } else {
         this.songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = shape)
     }
-}
-
-@Composable
-private fun Modifier.fallbackGlass(style: GlassStyle): Modifier {
-    return this
-        .clip(CircleShape)
-        .background(style.tint)
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
