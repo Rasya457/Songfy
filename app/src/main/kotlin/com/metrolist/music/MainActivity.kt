@@ -1371,7 +1371,7 @@ class MainActivity : FragmentActivity() {
                                             slideOutHorizontally { it / 8 } + fadeOut(tween(200))
                                         }
                                     },
-                                    modifier = Modifier.nestedScroll(liquidNavState.nestedScrollConnection),
+                                    // Scaffold already contains nestedScroll for liquidNavState, avoid duplicate dispatch
                                 ) {
                                     navigationBuilder(
                                         navController = navController,

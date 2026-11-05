@@ -308,7 +308,7 @@ class App :
                 memoryCache {
                     MemoryCache
                         .Builder()
-                        .maxSizePercent(context, 0.15)
+                        .maxSizePercent(context, 0.25)
                         .build()
                 }
                 if (cacheSize == 0) {

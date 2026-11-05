@@ -128,7 +128,7 @@ import kotlin.math.sin
 @Stable
 class LiquidNavState(
     initialTab: Int = 0,
-    private val thresholdPx: Float = 64f,
+    private val thresholdPx: Float = 120f,
 ) {
     var selectedTab by mutableIntStateOf(initialTab)
     var minimized by mutableStateOf(false)
@@ -859,15 +859,16 @@ private fun MiniPlayerContent(
             )
         }
 
-        // Next button (shrinks + fades when minimized to fit narrower pill)
+        // Next button (shrinks + fades when minimized to fit narrower pill - pure GPU transform)
         Box(
             modifier = Modifier
-                .fixedSize(
-                    w = { 42f * density * (1f - (progress.value * 1.4f).coerceIn(0f, 1f)) },
-                    h = { 42f * density },
-                )
+                .size(42.dp)
                 .graphicsLayer {
-                    alpha = (1f - progress.value * 1.8f).coerceIn(0f, 1f)
+                    val p = progress.value
+                    alpha = (1f - p * 1.8f).coerceIn(0f, 1f)
+                    val s = (1f - p * 1.4f).coerceIn(0f, 1f)
+                    scaleX = s
+                    scaleY = s
                 },
             contentAlignment = Alignment.Center,
         ) {
