@@ -449,7 +449,11 @@ fun MornyeNowPlaying(
                     .fillMaxWidth()
                     .fillMaxHeight(0.58f)
                     .graphicsLayer {
-                        alpha = (1f - transitionProgress).coerceIn(0f, 1f)
+                        translationY = -transitionProgress * 90.dp.toPx()
+                        val s = 1f - (transitionProgress * 0.10f)
+                        scaleX = s
+                        scaleY = s
+                        alpha = (1f - transitionProgress * 1.35f).coerceIn(0f, 1f)
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
                     .drawWithContent {
@@ -539,12 +543,15 @@ fun MornyeNowPlaying(
                     .fillMaxWidth()
                     .weight(1f),
             ) {
-                // When in LYRICS or QUEUE mode
+                // When in LYRICS or QUEUE mode: slides up smoothly from below (pulled upward)
                 if (transitionProgress > 0.01f) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = ((transitionProgress - 0.2f) * 1.25f).coerceIn(0f, 1f) },
+                            .graphicsLayer {
+                                translationY = (1f - transitionProgress) * 260.dp.toPx()
+                                alpha = ((transitionProgress - 0.15f) * 1.20f).coerceIn(0f, 1f)
+                            },
                     ) {
                         // Compact header in Lyrics / Queue mode
                         Row(
@@ -630,7 +637,10 @@ fun MornyeNowPlaying(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = ((1f - transitionProgress - 0.2f) * 1.25f).coerceIn(0f, 1f) },
+                            .graphicsLayer {
+                                translationY = -transitionProgress * 60.dp.toPx()
+                                alpha = (1f - transitionProgress * 1.45f).coerceIn(0f, 1f)
+                            },
                         verticalArrangement = Arrangement.Bottom,
                     ) {
                         // Title, Artist, and Circular ⋯ Button (as in screenshot)
