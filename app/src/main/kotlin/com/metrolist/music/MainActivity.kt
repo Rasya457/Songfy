@@ -882,19 +882,9 @@ class MainActivity : FragmentActivity() {
                             .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
                             .add(WindowInsets(top = AppBarHeight, bottom = bottom))
                     }
-                appBarScrollBehavior(
-                    canScroll = {
-                        !inSearchScreen &&
-                            (playerBottomSheetState.isCollapsed || playerBottomSheetState.isDismissed)
-                    },
-                )
-
                 val topAppBarScrollBehavior =
                     appBarScrollBehavior(
-                        canScroll = {
-                            !inSearchScreen &&
-                                (playerBottomSheetState.isCollapsed || playerBottomSheetState.isDismissed)
-                        },
+                        canScroll = { false },
                     )
 
                 // Navigation tracking
@@ -1140,7 +1130,7 @@ class MainActivity : FragmentActivity() {
                                                 }
                                             }
                                         },
-                                        scrollBehavior = topAppBarScrollBehavior,
+                                        scrollBehavior = null,
                                         colors =
                                             TopAppBarDefaults.topAppBarColors(
                                                 containerColor = Color.Transparent,
@@ -1285,8 +1275,7 @@ class MainActivity : FragmentActivity() {
                         modifier =
                             Modifier
                                 .fillMaxSize()
-                                .nestedScroll(liquidNavState.nestedScrollConnection)
-                                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                                .nestedScroll(liquidNavState.nestedScrollConnection),
                     ) {
                         Row(Modifier.fillMaxSize()) {
                             val onRailItemClick: (Screens, Boolean) -> Unit =
@@ -1382,8 +1371,7 @@ class MainActivity : FragmentActivity() {
                                             slideOutHorizontally { it / 8 } + fadeOut(tween(200))
                                         }
                                     },
-                                    modifier = Modifier.nestedScroll(liquidNavState.nestedScrollConnection)
-                                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                                    modifier = Modifier.nestedScroll(liquidNavState.nestedScrollConnection),
                                 ) {
                                     navigationBuilder(
                                         navController = navController,
