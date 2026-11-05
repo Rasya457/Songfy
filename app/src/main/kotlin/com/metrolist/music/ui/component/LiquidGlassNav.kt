@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Metrolist Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  *
@@ -22,8 +22,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -61,11 +65,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -96,9 +102,20 @@ import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.ui.screens.Screens
+import com.songfy.ui.FLING_PROJECTION
+import com.songfy.ui.PillShape
+import com.songfy.ui.SPRING_DAMPING
+import com.songfy.ui.SPRING_STIFFNESS
+import com.songfy.ui.SQUASH
+import com.songfy.ui.STRETCH
+import com.songfy.ui.SongfyLiquidBar
+import com.songfy.ui.SongfyTab
+import com.songfy.ui.rememberSongfyLiquidGlass
+import com.songfy.ui.songfyLiquidGlass
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -314,36 +331,30 @@ private fun Modifier.fadingEdges(fade: Dp = 14.dp): Modifier = this
 internal fun Modifier.liquidGlass(
     backdrop: GlassBackdrop? = null,
     style: GlassStyle = GlassStyle.Bar,
+    shape: Shape = PillShape,
 ): Modifier {
+    val dark = isSystemInDarkTheme()
     val canUseAgsl = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             backdrop != null && backdrop.isRecorded
 
-    val baseModifier = if (canUseAgsl) {
+    return if (canUseAgsl) {
         agslGlass(backdrop, style)
-    } else {
-        fallbackGlass(style)
-    }
-
-    return baseModifier
-        .background(
-            Brush.verticalGradient(
-                listOf(
-                    Color.White.copy(alpha = style.sheen),
-                    Color.White.copy(alpha = style.sheen * 0.12f),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = style.sheen),
+                        Color.White.copy(alpha = style.sheen * 0.12f),
+                    )
                 )
             )
-        )
-        .border(
-            width = 0.8.dp,
-            brush = Brush.linearGradient(
-                listOf(
-                    Color.White.copy(alpha = 0.45f),
-                    Color.White.copy(alpha = 0.05f),
-                    Color.White.copy(alpha = 0.20f),
-                )
-            ),
-            shape = CircleShape,
-        )
+            .border(
+                width = 0.5.dp,
+                color = Color.White.copy(alpha = if (dark) 0.12f else 0.20f),
+                shape = shape,
+            )
+    } else {
+        this.songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = shape)
+    }
 }
 
 @Composable
@@ -402,12 +413,12 @@ private fun Modifier.agslGlass(backdrop: GlassBackdrop, style: GlassStyle): Modi
 // Liquid Glass Bottom Bar
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-private val BarHeight = 64.dp
+private val BarHeight = 62.dp
 private val MiniHeight = 56.dp
 private val CircleSize = 56.dp
 private val Gap = 8.dp
 private val InnerPad = 4.dp
-private val IndicatorSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 380f)
+private val TabVerticalPadding = 6.5.dp
 
 @Composable
 fun LiquidGlassBottomBar(
@@ -473,45 +484,41 @@ fun LiquidGlassBottomBar(
 
         val n = navigationItems.size
         val itemW = if (n > 0) (wc - 2f * pad) / n else 0f
-        val targetX = pad + state.selectedTab * itemW
+        val lastIndex = (n - 1).coerceAtLeast(0).toFloat()
 
-        // â”€â”€ Active tab Lens indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        val indicatorX = remember { Animatable(targetX) }
-        var travel by remember { mutableFloatStateOf(1f) }
-        var dragging by remember { mutableStateOf(false) }
-        val lift = animateFloatAsState(
-            targetValue = if (dragging) 1f else 0f,
-            animationSpec = spring(dampingRatio = 0.6f, stiffness = 500f),
-            label = "lensLift",
-        )
+        // ── BitChord draw-phase pill Animatable & Spec ──
+        val position = remember { Animatable(state.selectedTab.toFloat()) }
+        var tabWidthPx by remember { mutableFloatStateOf(itemW) }
+        LaunchedEffect(itemW) {
+            if (itemW > 0f) tabWidthPx = itemW
+        }
 
-        var isInitialPlacement by remember { mutableStateOf(true) }
+        val spec = remember {
+            spring<Float>(
+                dampingRatio = SPRING_DAMPING,
+                stiffness = SPRING_STIFFNESS,
+            )
+        }
 
-        LaunchedEffect(state.selectedTab, itemW) {
-            if (itemW > 0f) {
-                if (isInitialPlacement) {
-                    indicatorX.snapTo(targetX)
-                    isInitialPlacement = false
-                } else {
-                    travel = max(1f, abs(targetX - indicatorX.value))
-                    indicatorX.animateTo(targetX, IndicatorSpring)
+        LaunchedEffect(state.selectedTab) {
+            if (position.targetValue.roundToInt() != state.selectedTab) {
+                position.animateTo(state.selectedTab.toFloat(), spec)
+            }
+        }
+
+        val dragState = rememberDraggableState { deltaPx ->
+            if (tabWidthPx > 0f) {
+                scope.launch {
+                    position.snapTo(
+                        (position.value + deltaPx / tabWidthPx).coerceIn(0f, lastIndex)
+                    )
                 }
             }
         }
 
-        val settle: () -> Unit = {
-            if (n > 0) {
-                val idx = ((indicatorX.value - pad) / itemW).roundToInt().coerceIn(0, n - 1)
-                state.selectedTab = idx
-                val screen = navigationItems[idx]
-                val isSelected = currentRoute == screen.route
-                onNavItemClick(screen, isSelected)
-                val tx = pad + idx * itemW
-                scope.launch {
-                    travel = max(1f, abs(tx - indicatorX.value))
-                    indicatorX.animateTo(tx, IndicatorSpring)
-                }
-            }
+        val dark = isSystemInDarkTheme()
+        val pillFill = remember(dark) {
+            if (dark) Color.White.copy(alpha = 0.12f) else Color.Black.copy(alpha = 0.08f)
         }
 
         Box(
@@ -519,7 +526,7 @@ fun LiquidGlassBottomBar(
                 .fillMaxWidth()
                 .height(if (effectiveShowMiniPlayer) (MiniHeight + Gap + BarHeight) else BarHeight)
         ) {
-            // â”€â”€ 1) Mini Player Pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── 1) Mini Player Pill ──────────────────────────
             if (effectiveShowMiniPlayer) {
                 Box(
                     modifier = Modifier
@@ -534,7 +541,7 @@ fun LiquidGlassBottomBar(
                             w = { lerp(wc, wc - 2f * (circle + gap), progress.value) },
                             h = { miniH },
                         )
-                        .liquidGlass(backdrop, GlassStyle.Bar)
+                        .songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = PillShape)
                         .then(if (playerSheetState != null) Modifier.sheetMini(playerSheetState) else Modifier)
                 ) {
                     MiniPlayerContent(
@@ -563,7 +570,7 @@ fun LiquidGlassBottomBar(
                 }
             }
 
-            // â”€â”€ 2) Tab Bar (Pill -> circle on scroll down) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // 2) Tab Bar (Pill -> circle on scroll down)
             Box(
                 modifier = Modifier
                     .offset {
@@ -573,39 +580,52 @@ fun LiquidGlassBottomBar(
                         w = { lerp(wc, circle, progress.value) },
                         h = { lerp(barH, circle, progress.value) },
                     )
-                    .liquidGlass(backdrop, GlassStyle.Bar)
-                    .pointerInput(n, itemW) {
-                        if (n > 1) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { if (progress.value < 0.5f) dragging = true },
-                                onDragEnd = { if (dragging) { dragging = false; settle() } },
-                                onDragCancel = { if (dragging) { dragging = false; settle() } },
-                                onHorizontalDrag = { change, dx ->
-                                    if (dragging) {
-                                        change.consume()
-                                        scope.launch {
-                                            indicatorX.snapTo(
-                                                (indicatorX.value + dx)
-                                                    .coerceIn(pad, pad + itemW * (n - 1))
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        }
-                    }
+                    .songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = PillShape)
+                    .draggable(
+                        state = dragState,
+                        orientation = Orientation.Horizontal,
+                        enabled = progress.value < 0.5f && n > 1,
+                        onDragStopped = { velocityPxPerSec ->
+                            if (tabWidthPx > 0f) {
+                                val vIdx = velocityPxPerSec / tabWidthPx
+                                val target = (position.value + vIdx * FLING_PROJECTION)
+                                    .roundToInt()
+                                    .coerceIn(0, lastIndex.toInt())
+                                if (target != state.selectedTab) {
+                                    val screen = navigationItems[target]
+                                    val isSelected = currentRoute == screen.route
+                                    onNavItemClick(screen, isSelected)
+                                    state.selectedTab = target
+                                }
+                                scope.launch {
+                                    position.animateTo(target.toFloat(), spec, initialVelocity = vIdx)
+                                }
+                            }
+                        },
+                    )
             ) {
-                // Lens indicator behind active tab (GlassSelectionPill ported from liquid_glass_easy)
+                // Lens indicator behind active tab:
+                // Evaluated ONLY in graphicsLayer {} (draw phase) - 0 recomposition & 0 layout pass!
                 if (n > 0) {
-                    GlassSelectionPill(
-                        targetX = targetX,
-                        targetY = pad,
-                        targetWidth = itemW,
-                        targetHeight = barH - 2f * pad,
-                        isDragging = dragging,
-                        backdrop = backdrop,
-                        alphaProgress = progress.value,
-                        indicatorX = indicatorX,
+                    Box(
+                        Modifier
+                            .fixedSize(
+                                w = { itemW },
+                                h = { barH - 2f * pad },
+                            )
+                            .graphicsLayer {
+                                val p = position.value
+                                translationX = pad + p * itemW
+                                translationY = pad
+                                val f = p - floor(p)
+                                val bump = 4f * f * (1f - f)
+                                scaleX = 1f + STRETCH * bump
+                                scaleY = 1f - SQUASH * bump
+                                alpha = (1f - progress.value * 2.5f).coerceIn(0f, 1f)
+                            }
+                            .clip(PillShape)
+                            .background(pillFill)
+                            .border(0.5.dp, Color.White.copy(alpha = if (dark) 0.12f else 0.20f), PillShape),
                     )
                 }
 
@@ -653,7 +673,7 @@ fun LiquidGlassBottomBar(
                 }
             }
 
-            // â”€â”€ 3) Detached Search Circle (appears on right when minimized) â”€â”€
+            // 3) Detached Search Circle (appears on right when minimized)
             val searchScreen = navigationItems.firstOrNull { it == Screens.Search } ?: navigationItems.lastOrNull()
             if (searchScreen != null) {
                 val searchIdx = navigationItems.indexOf(searchScreen)
@@ -669,7 +689,7 @@ fun LiquidGlassBottomBar(
                             scaleX = 0.6f + 0.4f * p
                             scaleY = 0.6f + 0.4f * p
                         }
-                        .liquidGlass(backdrop, GlassStyle.Bar)
+                        .songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = CircleShape)
                         .tap(
                             onLongClick = onSearchLongClick,
                             onClick = {

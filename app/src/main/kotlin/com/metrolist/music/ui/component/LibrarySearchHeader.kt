@@ -5,9 +5,12 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -28,7 +31,9 @@ import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
 import com.metrolist.music.R
+import com.songfy.ui.songfyLiquidGlass
 
 @Composable
 fun LibrarySearchHeader(
@@ -54,37 +59,51 @@ fun LibrarySearchHeader(
         modifier = modifier.fillMaxWidth(),
     ) {
         if (isSearchActive) {
-            TextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        text = stringResource(R.string.search_library),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.titleMedium,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier =
                     Modifier
                         .weight(1f)
-                        .focusRequester(focusRequester),
-            )
-
-            IconButton(onClick = onBack) {
-                Icon(
-                    painter = painterResource(R.drawable.close),
-                    contentDescription = stringResource(R.string.close),
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .songfyLiquidGlass(
+                            dark = isSystemInDarkTheme(),
+                            shadowElevation = 8.dp,
+                            shape = RoundedCornerShape(20.dp),
+                        )
+                        .padding(horizontal = 8.dp),
+            ) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = {
+                        Text(
+                            text = stringResource(R.string.search_library),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.titleMedium,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
                 )
+
+                IconButton(onClick = onBack) {
+                    Icon(
+                        painter = painterResource(R.drawable.close),
+                        contentDescription = stringResource(R.string.close),
+                    )
+                }
             }
         } else {
             inactiveContent()

@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.songfy.ui.songfyLiquidGlass
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -1065,7 +1066,25 @@ class MainActivity : FragmentActivity() {
                                 enter = fadeIn(animationSpec = tween(durationMillis = 300)),
                                 exit = fadeOut(animationSpec = tween(durationMillis = 200)),
                             ) {
-                                Row {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .windowInsetsPadding(
+                                                if (showRail) {
+                                                    WindowInsets(left = NavigationBarHeight)
+                                                        .add(cutoutInsets.only(WindowInsetsSides.Start))
+                                                } else {
+                                                    cutoutInsets.only(WindowInsetsSides.Start + WindowInsetsSides.End)
+                                                },
+                                            )
+                                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                                            .songfyLiquidGlass(
+                                                dark = pureBlack || useDarkTheme,
+                                                shadowElevation = 12.dp,
+                                                shape = RoundedCornerShape(26.dp),
+                                            ),
+                                ) {
                                     TopAppBar(
                                         title = {
                                             Text(
@@ -1124,21 +1143,14 @@ class MainActivity : FragmentActivity() {
                                         scrollBehavior = topAppBarScrollBehavior,
                                         colors =
                                             TopAppBarDefaults.topAppBarColors(
-                                                containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer,
-                                                scrolledContainerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer,
+                                                containerColor = Color.Transparent,
+                                                scrolledContainerColor = Color.Transparent,
                                                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                                                 actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                             ),
-                                        modifier =
-                                            Modifier.windowInsetsPadding(
-                                                if (showRail) {
-                                                    WindowInsets(left = NavigationBarHeight)
-                                                        .add(cutoutInsets.only(WindowInsetsSides.Start))
-                                                } else {
-                                                    cutoutInsets.only(WindowInsetsSides.Start + WindowInsetsSides.End)
-                                                },
-                                            ),
+                                        windowInsets = WindowInsets(0, 0, 0, 0),
+                                        modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
                             }
