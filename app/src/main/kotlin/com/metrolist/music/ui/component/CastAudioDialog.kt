@@ -63,6 +63,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.songfy.ui.icons.SongfyIcons
+import com.songfy.ui.icons.SongfyOutputKind
+import com.songfy.ui.icons.rememberSongfyAudioOutputState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,19 +87,9 @@ fun CastAudioDialog(
     val castDeviceName by castHandler?.castDeviceName?.collectAsStateWithLifecycle() ?: remember { mutableStateOf<String?>(null) }
     val castVolume by castHandler?.castVolume?.collectAsStateWithLifecycle() ?: remember { mutableFloatStateOf(1f) }
 
-    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val connectedBluetoothDevice = remember(context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            runCatching {
-                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                }
-            }.getOrNull()
-        } else null
-    }
-    val isBluetoothActive = connectedBluetoothDevice != null && !isCasting
-    val bluetoothName = connectedBluetoothDevice?.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Bluetooth Audio"
+    val audioOutput by rememberSongfyAudioOutputState()
+    val isBluetoothActive = audioOutput.kind != SongfyOutputKind.PHONE && !isCasting
+    val bluetoothName = audioOutput.deviceName ?: "Bluetooth Audio"
 
     val scale = androidx.compose.ui.util.lerp(0.85f, 1f, animProgress)
     val alpha = (animProgress * 1.5f).coerceIn(0f, 1f)
@@ -158,7 +151,7 @@ fun CastAudioDialog(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_apple_airplay),
+                                imageVector = SongfyIcons.AirPlay,
                                 contentDescription = null,
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp),
@@ -189,7 +182,7 @@ fun CastAudioDialog(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.close),
+                            imageVector = SongfyIcons.Close,
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.65f),
                             modifier = Modifier.size(18.dp),
@@ -224,7 +217,7 @@ fun CastAudioDialog(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                painter = painterResource(R.drawable.volume_up),
+                                imageVector = SongfyIcons.SpeakerHigh,
                                 contentDescription = null,
                                 tint = Color.White,
                                 modifier = Modifier.size(18.dp),
@@ -257,7 +250,7 @@ fun CastAudioDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // ── Option 2: Bluetooth Audio ──
+                // ── Option 2: Bluetooth / External Audio ──
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -289,7 +282,7 @@ fun CastAudioDialog(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                painter = painterResource(R.drawable.bluetooth),
+                                imageVector = if (isBluetoothActive) SongfyIcons.outputGlyph(audioOutput.kind) else SongfyIcons.Buds,
                                 contentDescription = null,
                                 tint = if (isBluetoothActive) MaterialTheme.colorScheme.primary else Color.White,
                                 modifier = Modifier.size(18.dp),
@@ -298,7 +291,7 @@ fun CastAudioDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (connectedBluetoothDevice != null) bluetoothName else "Bluetooth Devices",
+                                text = if (audioOutput.deviceName != null) bluetoothName else "Bluetooth Devices",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -425,7 +418,7 @@ fun CastAudioDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.volume_down),
+                                    imageVector = SongfyIcons.SpeakerLow,
                                     contentDescription = null,
                                     tint = Color.White.copy(alpha = 0.65f),
                                     modifier = Modifier.size(16.dp),
@@ -462,7 +455,7 @@ fun CastAudioDialog(
 
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Icon(
-                                    painter = painterResource(R.drawable.volume_up),
+                                    imageVector = SongfyIcons.SpeakerHigh,
                                     contentDescription = null,
                                     tint = Color.White.copy(alpha = 0.65f),
                                     modifier = Modifier.size(16.dp),

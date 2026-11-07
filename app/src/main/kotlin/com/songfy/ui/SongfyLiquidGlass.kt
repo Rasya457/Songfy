@@ -222,6 +222,12 @@ fun SongfyLiquidBar(
 
         Row(Modifier.fillMaxWidth().fillMaxHeight()) {
             tabs.forEachIndexed { i, tab ->
+                val selected = i == selectedIndex
+                val tabColor = if (dark) {
+                    if (selected) Color.White else Color.White.copy(alpha = 0.65f)
+                } else {
+                    if (selected) Color(0xFF111111) else Color(0xFF111111).copy(alpha = 0.65f)
+                }
                 val interaction = remember { MutableInteractionSource() }
                 Column(
                     modifier = Modifier
@@ -241,14 +247,14 @@ fun SongfyLiquidBar(
                         imageVector = tab.icon,
                         contentDescription = tab.label,
                         modifier = Modifier.size(IconSize),
-                        colorFilter = ColorFilter.tint(content),
+                        colorFilter = ColorFilter.tint(tabColor),
                     )
                     Text(
                         text = tab.label,
-                        color = content,
+                        color = tabColor,
                         fontSize = 10.sp,
                         letterSpacing = 0.5.sp,
-                        fontWeight = if (i == selectedIndex) FontWeight.SemiBold else FontWeight.Medium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 1,
                     )
                 }

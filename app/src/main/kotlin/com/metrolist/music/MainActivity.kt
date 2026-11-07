@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.songfy.ui.icons.SongfyIcons
 import com.songfy.ui.songfyLiquidGlass
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -1100,22 +1101,25 @@ class MainActivity : FragmentActivity() {
                                             if (showHistoryButton) {
                                                 IconButton(onClick = { navController.navigate("history") }) {
                                                     Icon(
-                                                        painter = painterResource(R.drawable.history),
+                                                        imageVector = SongfyIcons.History,
                                                         contentDescription = stringResource(R.string.history),
+                                                        modifier = Modifier.size(24.dp),
                                                     )
                                                 }
                                             }
                                             IconButton(onClick = { navController.navigate("stats") }) {
                                                 Icon(
-                                                    painter = painterResource(R.drawable.stats),
+                                                    imageVector = SongfyIcons.Stats,
                                                     contentDescription = stringResource(R.string.stats),
+                                                    modifier = Modifier.size(24.dp),
                                                 )
                                             }
                                             if (listenTogetherInTopBar) {
                                                 IconButton(onClick = { navController.navigate("listen_together_from_topbar") }) {
                                                     Icon(
-                                                        painter = painterResource(R.drawable.group_outlined),
+                                                        imageVector = SongfyIcons.ListenTogether,
                                                         contentDescription = stringResource(R.string.together),
+                                                        modifier = Modifier.size(24.dp),
                                                     )
                                                 }
                                             }
@@ -1136,7 +1140,7 @@ class MainActivity : FragmentActivity() {
                                                         )
                                                     } else {
                                                         Icon(
-                                                            painter = painterResource(R.drawable.account),
+                                                            imageVector = SongfyIcons.Account,
                                                             contentDescription = stringResource(R.string.account),
                                                             modifier = Modifier.size(24.dp),
                                                         )

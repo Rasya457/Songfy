@@ -145,6 +145,11 @@ import com.metrolist.music.ui.component.SongOptionsMenu
 import com.metrolist.music.ui.component.SyncedLyricsView
 import com.metrolist.music.ui.menu.AddToPlaylistDialog
 import com.metrolist.music.ui.utils.ShowMediaInfo
+import com.songfy.ui.icons.SongfyIconStyle
+import com.songfy.ui.icons.SongfyIcons
+import com.songfy.ui.icons.SongfyOutputKind
+import com.songfy.ui.icons.SongfyPlayerGlyph
+import com.songfy.ui.icons.rememberSongfyAudioOutputState
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -598,7 +603,7 @@ fun MornyeNowPlaying(
                                 modifier = Modifier.size(40.dp),
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.more_horiz),
+                                    imageVector = SongfyIcons.Ellipsis,
                                     contentDescription = "More",
                                     tint = Color.White,
                                     modifier = Modifier.size(22.dp),
@@ -688,7 +693,7 @@ fun MornyeNowPlaying(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.more_horiz),
+                                    imageVector = SongfyIcons.Ellipsis,
                                     contentDescription = "More options",
                                     tint = Color.White,
                                     modifier = Modifier.size(20.dp),
@@ -945,7 +950,7 @@ private fun QueueContent(
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(painterResource(R.drawable.shuffle), null, tint = if (shuffleModeEnabled) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(20.dp))
+                Icon(SongfyIcons.Shuffle, null, tint = if (shuffleModeEnabled) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(22.dp))
             }
 
             val repeatActive = repeatMode != Player.REPEAT_MODE_OFF
@@ -964,7 +969,7 @@ private fun QueueContent(
                     .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(painterResource(if (repeatMode == Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat), null, tint = if (repeatActive) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(20.dp))
+                Icon(if (repeatMode == Player.REPEAT_MODE_ONE) SongfyIcons.RepeatOne else SongfyIcons.Repeat, null, tint = if (repeatActive) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(22.dp))
             }
         }
 
@@ -1001,7 +1006,7 @@ private fun QueueContent(
                             Text(meta.title?.toString().orEmpty(), color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White, fontSize = 14.sp, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(meta.artist?.toString().orEmpty(), color = Color.White.copy(0.60f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        if (isCurrent) Icon(painterResource(R.drawable.play), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        if (isCurrent) Icon(SongfyIcons.Play, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -1093,17 +1098,8 @@ private fun BottomControls(
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat().coerceAtLeast(1f) }
 
-    val connectedBluetoothDevice = remember(context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            runCatching {
-                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                }
-            }.getOrNull()
-        } else null
-    }
-    val isBluetoothActive = connectedBluetoothDevice != null && !isCasting
+    val audioOutput by rememberSongfyAudioOutputState()
+    val isExternalOutputActive = audioOutput.kind != SongfyOutputKind.PHONE && !isCasting
 
     var volumeUi by remember {
         mutableFloatStateOf((audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol).coerceIn(0f, 1f))
@@ -1263,7 +1259,7 @@ private fun BottomControls(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(R.drawable.volume_down), null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
+            Icon(imageVector = SongfyIcons.SpeakerLow, contentDescription = null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
             Slider(
                 state = volumeSliderState,
                 onValueChange = { newVal ->
@@ -1288,12 +1284,12 @@ private fun BottomControls(
                 },
                 modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
             )
-            Icon(painterResource(R.drawable.volume_up), null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
+            Icon(imageVector = SongfyIcons.SpeakerHigh, contentDescription = null, tint = Color.White.copy(0.65f), modifier = Modifier.size(18.dp))
         }
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Mode switch bar: Lyrics | Audio Output (AirPlay / Bluetooth / Cast) | Queue ("Continue Music")
+        // Mode switch bar: Lyrics | Audio Output (AirPods / Buds / Speaker / Cast) | Queue ("Continue Music")
         // Each button has an expanded 1/3-width touch container with instantTap to ensure 100% 1-tap responsiveness
         Row(
             modifier = Modifier
@@ -1302,7 +1298,7 @@ private fun BottomControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 1. Lyrics Toggle (1/3 of row)
+            // 1. Lyrics Toggle (1/3 of row) — 28dp SongfyIcons.LyricsQuote
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1328,16 +1324,16 @@ private fun BottomControls(
                         .indication(lyricsInteraction, ripple(bounded = true, radius = 25.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.lyrics),
+                    SongfyPlayerGlyph(
+                        icon = SongfyIcons.LyricsQuote,
                         contentDescription = "Lyrics",
-                        tint = if (mode == NowPlayingMode.LYRICS) Color.White else Color.White.copy(0.75f),
-                        modifier = Modifier.size(24.dp),
+                        tint = if (mode == NowPlayingMode.LYRICS) Color.White else SongfyIconStyle.PlayerGlyphTint,
                     )
                 }
             }
 
-            // 2. Audio Output / AirPlay / Bluetooth / Google Cast (1/3 of row)
+            // 2. Audio Output Glyph (1/3 of row) — 28dp dynamic glyph (AirPods/Buds, Headphones, Speaker, Car, TV, AirPlay)
+            val outputKind = if (isCasting) SongfyOutputKind.OTHER else audioOutput.kind
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1353,32 +1349,21 @@ private fun BottomControls(
                         .size(50.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                            if (isCasting || isExternalOutputActive) Color.White.copy(alpha = 0.16f)
                             else Color.Transparent,
                         )
-                        .let {
-                            if (isCasting || isBluetoothActive) it.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.40f), CircleShape)
-                            else it
-                        }
                         .indication(castInteraction, ripple(bounded = true, radius = 25.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        painter = painterResource(
-                            when {
-                                isCasting -> R.drawable.cast_connected
-                                isBluetoothActive -> R.drawable.bluetooth
-                                else -> R.drawable.ic_apple_airplay
-                            }
-                        ),
+                    SongfyPlayerGlyph(
+                        icon = SongfyIcons.outputGlyph(outputKind),
                         contentDescription = "Audio Output",
-                        tint = if (isCasting || isBluetoothActive) MaterialTheme.colorScheme.primary else Color.White.copy(0.75f),
-                        modifier = Modifier.size(24.dp),
+                        tint = SongfyIconStyle.PlayerGlyphTint,
                     )
                 }
             }
 
-            // 3. Queue Toggle ("Continue Music") (1/3 of row)
+            // 3. Queue Toggle ("Continue Music") (1/3 of row) — 28dp SongfyIcons.Queue
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1404,11 +1389,10 @@ private fun BottomControls(
                         .indication(queueInteraction, ripple(bounded = true, radius = 25.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.queue_music),
+                    SongfyPlayerGlyph(
+                        icon = SongfyIcons.Queue,
                         contentDescription = "Continue Playing",
-                        tint = if (mode == NowPlayingMode.QUEUE) Color.White else Color.White.copy(0.75f),
-                        modifier = Modifier.size(24.dp),
+                        tint = if (mode == NowPlayingMode.QUEUE) Color.White else SongfyIconStyle.PlayerGlyphTint,
                     )
                 }
             }
@@ -1416,16 +1400,10 @@ private fun BottomControls(
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        val currentDeviceName = remember(isCasting, isBluetoothActive, connectedBluetoothDevice) {
-            when {
-                isCasting -> "Google Cast"
-                isBluetoothActive -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        connectedBluetoothDevice.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Bluetooth"
-                    } else "Bluetooth"
-                }
-                else -> null
-            }
+        val currentDeviceName = when {
+            isCasting -> "Google Cast"
+            isExternalOutputActive -> audioOutput.deviceName
+            else -> null
         }
         val displayDeviceText = currentDeviceName ?: stringResource(R.string.this_phone)
 

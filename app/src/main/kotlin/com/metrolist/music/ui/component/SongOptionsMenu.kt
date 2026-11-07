@@ -32,13 +32,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.metrolist.music.R
+import com.songfy.ui.icons.SongfyIcons
 
 // Spesifikasi panel asli BitChord (IosMenu.kt / SongActionsMenu.kt)
 private val MenuFill = Color(0xFF1C1C1E).copy(alpha = 0.94f)
@@ -133,7 +133,7 @@ fun SongOptionsMenu(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.share),
+                        imageVector = SongfyIcons.Share,
                         contentDescription = "Share",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp),
@@ -151,13 +151,13 @@ fun SongOptionsMenu(
             // ── Grup 1: Kualitas Audio & Info Lagu ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
-                iconRes = R.drawable.equalizer,
+                icon = SongfyIcons.Sliders,
                 title = "Upgrade quality",
                 subtitle = "Audio format & technical specs",
                 onClick = { onAction("upgrade") },
             )
             MenuRow(
-                iconRes = R.drawable.info,
+                icon = SongfyIcons.Info,
                 title = "Song Info",
                 subtitle = "Complete track metadata",
                 onClick = { onAction("info") },
@@ -166,27 +166,27 @@ fun SongOptionsMenu(
             // ── Grup 2: Pemutaran, Antrean & Playlist ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
-                iconRes = R.drawable.playlist_play,
+                icon = SongfyIcons.PlayNext,
                 title = "Play next",
                 onClick = { onAction("play_next") },
             )
             MenuRow(
-                iconRes = R.drawable.queue_music,
+                icon = SongfyIcons.Queue,
                 title = "Add to queue",
                 onClick = { onAction("queue") },
             )
             MenuRow(
-                iconRes = R.drawable.playlist_add,
+                icon = SongfyIcons.PlusCircle,
                 title = "Add to playlist",
                 onClick = { onAction("playlist") },
             )
             MenuRow(
-                iconRes = R.drawable.radio,
+                icon = SongfyIcons.Radio,
                 title = "Start radio",
                 onClick = { onAction("radio") },
             )
             MenuRow(
-                iconRes = R.drawable.slow_motion_video,
+                icon = SongfyIcons.Video,
                 title = "Convert to video",
                 onClick = { onAction("video") },
             )
@@ -195,20 +195,20 @@ fun SongOptionsMenu(
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             if (!isDownloaded) {
                 MenuRow(
-                    iconRes = R.drawable.download,
+                    icon = SongfyIcons.Download,
                     title = "Download",
                     onClick = { onAction("download") },
                 )
             } else {
                 MenuRow(
-                    iconRes = R.drawable.delete,
+                    icon = SongfyIcons.Trash,
                     title = "Remove download",
                     onClick = { onAction("remove_download") },
                 )
             }
             if (isCached) {
                 MenuRow(
-                    iconRes = R.drawable.cached,
+                    icon = SongfyIcons.Refresh,
                     title = "Remove from cache",
                     onClick = { onAction("remove_cache") },
                 )
@@ -217,13 +217,13 @@ fun SongOptionsMenu(
             // ── Grup 4: Album & Artis ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
-                iconRes = R.drawable.album,
+                icon = SongfyIcons.Album,
                 title = "Open album",
                 subtitle = albumName,
                 onClick = { onAction("album") },
             )
             MenuRow(
-                iconRes = R.drawable.artist,
+                icon = SongfyIcons.Artist,
                 title = "Open artist",
                 subtitle = artistName,
                 onClick = { onAction("artist") },
@@ -232,17 +232,17 @@ fun SongOptionsMenu(
             // ── Grup 5: Alat Pemutar ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
-                iconRes = R.drawable.bedtime,
+                icon = SongfyIcons.Moon,
                 title = "Sleep timer",
                 onClick = { onAction("sleep") },
             )
             MenuRow(
-                iconRes = R.drawable.tune,
+                icon = SongfyIcons.Sliders,
                 title = "Lyrics offset",
                 onClick = { onAction("lyrics_offset") },
             )
             MenuRow(
-                iconRes = R.drawable.bug_report,
+                icon = SongfyIcons.Info,
                 title = "Copy log",
                 onClick = { onAction("copy_log") },
             )
@@ -252,7 +252,7 @@ fun SongOptionsMenu(
 
 @Composable
 private fun MenuRow(
-    @DrawableRes iconRes: Int,
+    icon: ImageVector,
     title: String,
     subtitle: String? = null,
     onClick: () -> Unit,
@@ -269,7 +269,7 @@ private fun MenuRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(id = iconRes),
+            imageVector = icon,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(22.dp),

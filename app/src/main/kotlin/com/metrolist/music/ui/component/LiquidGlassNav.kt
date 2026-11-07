@@ -107,6 +107,10 @@ import com.songfy.ui.SPRING_DAMPING
 import com.songfy.ui.SPRING_STIFFNESS
 import com.songfy.ui.SQUASH
 import com.songfy.ui.STRETCH
+import com.songfy.ui.icons.SongfyIconStyle
+import com.songfy.ui.icons.SongfyIcons
+import com.songfy.ui.icons.SongfyTabIcon
+import com.songfy.ui.icons.toSongfyIcon
 import com.songfy.ui.songfyLiquidGlass
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -675,12 +679,10 @@ fun LiquidGlassBottomBar(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val iconRes = if (searchSelected) searchScreen.iconIdActive else searchScreen.iconIdInactive
-                    Icon(
-                        painter = painterResource(id = iconRes),
+                    SongfyTabIcon(
+                        icon = SongfyIcons.Search,
+                        selected = true,
                         contentDescription = stringResource(searchScreen.titleId),
-                        tint = if (searchSelected) accent else Color.White,
-                        modifier = Modifier.size(26.dp),
                     )
                 }
             }
@@ -688,9 +690,9 @@ fun LiquidGlassBottomBar(
     }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // NavItem Component
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun NavItem(
@@ -701,8 +703,7 @@ private fun NavItem(
     density: Float,
     modifier: Modifier,
 ) {
-    val color by animateColorAsState(if (selected) accent else Color.White, label = "tabTint")
-    val iconRes = if (selected) screen.iconIdActive else screen.iconIdInactive
+    val color = if (selected) SongfyIconStyle.ActiveTint else SongfyIconStyle.InactiveTint
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(
@@ -713,18 +714,17 @@ private fun NavItem(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                painter = painterResource(id = iconRes),
+            SongfyTabIcon(
+                icon = screen.toSongfyIcon(),
+                selected = selected,
                 contentDescription = stringResource(screen.titleId),
-                tint = color,
-                modifier = Modifier.size(24.dp),
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(screen.titleId),
                 color = color,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.graphicsLayer {
@@ -823,7 +823,7 @@ private fun MiniPlayerContent(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = painterResource(id = if (isPlaying) R.drawable.pause else R.drawable.play),
+                imageVector = if (isPlaying) SongfyIcons.Pause else SongfyIcons.Play,
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = Color.White,
                 modifier = Modifier.size(26.dp),
@@ -867,7 +867,7 @@ private fun MiniPlayerContent(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.skip_next),
+                    imageVector = SongfyIcons.Forward,
                     contentDescription = "Next",
                     tint = Color.White,
                     modifier = Modifier.size(26.dp),
