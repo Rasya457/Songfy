@@ -325,33 +325,34 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        // Start the playback service explicitly once so it can outlive binding.
-        // Re-issuing startForegroundService() while an existing service instance is already
-        // running can trigger "did not then call startForeground" on some Android 9 devices
-        // when the framework expects a fresh foreground promotion for that start request.
-        if (!MusicService.isRunning) {
-            val serviceIntent = Intent(this, MusicService::class.java)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    ContextCompat.startForegroundService(this, serviceIntent)
-                } else {
-                    startService(serviceIntent)
+        // Post service start & bind until after the first UI frame renders so MusicService.onCreate()
+        // does not block initial Compose measurement and layout on the main thread.
+        window.decorView.post {
+            if (isFinishing || isDestroyed) return@post
+            if (!MusicService.isRunning) {
+                val serviceIntent = Intent(this, MusicService::class.java)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        ContextCompat.startForegroundService(this, serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
+                } catch (e: ForegroundServiceStartNotAllowedException) {
+                    Timber.w(e, "Cannot start foreground service from background")
+                } catch (e: IllegalStateException) {
+                    Timber.w(e, "Failed to start foreground service")
                 }
-            } catch (e: ForegroundServiceStartNotAllowedException) {
-                Timber.w(e, "Cannot start foreground service from background")
-            } catch (e: IllegalStateException) {
-                Timber.w(e, "Failed to start foreground service")
             }
-        }
 
-        // Bind to service - if already bound, this is a no-op but ensures we stay connected
-        if (!isServiceBound) {
-            bindService(
-                Intent(this, MusicService::class.java),
-                serviceConnection,
-                BIND_AUTO_CREATE,
-            )
-            isServiceBound = true
+            // Bind to service - if already bound, this is a no-op but ensures we stay connected
+            if (!isServiceBound) {
+                bindService(
+                    Intent(this, MusicService::class.java),
+                    serviceConnection,
+                    BIND_AUTO_CREATE,
+                )
+                isServiceBound = true
+            }
         }
     }
 
@@ -668,6 +669,7 @@ class MainActivity : FragmentActivity() {
                                         ImageRequest
                                             .Builder(this@MainActivity)
                                             .data(song.thumbnailUrl)
+                                            .size(100, 100)
                                             .allowHardware(false)
                                             .memoryCachePolicy(CachePolicy.ENABLED)
                                             .diskCachePolicy(CachePolicy.ENABLED)
@@ -675,7 +677,10 @@ class MainActivity : FragmentActivity() {
                                             .crossfade(false)
                                             .build(),
                                     )
-                                val extractedColor = result.image?.toBitmap()?.extractThemeColor() ?: selectedThemeColor
+                                val extractedColor =
+                                    withContext(Dispatchers.Default) {
+                                        result.image?.toBitmap()?.extractThemeColor()
+                                    } ?: selectedThemeColor
                                 themeColorCache[song.thumbnailUrl] = extractedColor
                                 withFrameNanos { }
                                 themeColor = extractedColor

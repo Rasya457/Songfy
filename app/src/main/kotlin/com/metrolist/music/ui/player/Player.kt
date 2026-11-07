@@ -746,11 +746,20 @@ fun BottomSheetPlayer(
         mutableStateOf(false)
     }
 
+    // Pre-warm blurred cover art in the background after startup settles so opening the player is instant
+    LaunchedEffect(mediaMetadata?.thumbnailUrl) {
+        val url = mediaMetadata?.thumbnailUrl
+        if (!url.isNullOrBlank() && com.metrolist.music.ui.utils.CoverBlurHelper.getCached(url) == null) {
+            delay(1500)
+            com.metrolist.music.ui.utils.CoverBlurHelper.getOrComputeBlur(context, url)
+        }
+    }
+
     // Position update - only for local playback
     // When casting, we use castPosition directly to avoid sync issues
     // Use isPlaying instead of playbackState to ensure continuous updates during playback
-    LaunchedEffect(isPlaying, isCasting, state.isExpanded) {
-        if (!isCasting && isPlaying) {
+    LaunchedEffect(isPlaying, isCasting, state.isExpanded, hideCollapsedContent, state.isCollapsedOrDismissed) {
+        if (!isCasting && isPlaying && (!hideCollapsedContent || !state.isCollapsedOrDismissed)) {
             while (isActive) {
                 delay(if (state.isExpanded) 100L else 1000L) // Fast 100ms updates when expanded, 1000ms when collapsed to save CPU/battery
                 if (sliderPosition == null) { // Only update if user isn't dragging

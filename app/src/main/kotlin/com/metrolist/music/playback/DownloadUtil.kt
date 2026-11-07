@@ -302,14 +302,14 @@ constructor(
         }
 
     init {
-        val result = mutableMapOf<String, Download>()
-        downloadManager.downloadIndex.getDownloads().use { cursor ->
-            while (cursor.moveToNext()) {
-                result[cursor.download.request.id] = cursor.download
+        scope.launch(Dispatchers.IO) {
+            val result = mutableMapOf<String, Download>()
+            downloadManager.downloadIndex.getDownloads().use { cursor ->
+                while (cursor.moveToNext()) {
+                    result[cursor.download.request.id] = cursor.download
+                }
             }
-        }
-        downloads.value = result
-        scope.launch {
+            downloads.value = result
             result.values
                 .filter { it.state == Download.STATE_COMPLETED }
                 .forEach { removeFromPlayerCache(it.request.id) }

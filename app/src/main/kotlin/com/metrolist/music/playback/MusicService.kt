@@ -1186,81 +1186,79 @@ class MusicService :
             dataStore.data.map { it[AutoLoadMoreKey] ?: true }.distinctUntilChanged().collect { cachedAutoLoadMore = it }
         }
         if (startupPrefs!![PersistentQueueKey] ?: true) {
-            val queueFile = filesDir.resolve(PERSISTENT_QUEUE_FILE)
-            if (queueFile.exists()) {
-                runCatching {
-                    queueFile.inputStream().use { fis ->
-                        ObjectInputStream(fis).use { oos ->
-                            oos.readObject() as PersistQueue
-                        }
-                    }
-                }.onSuccess { queue ->
+            scope.launch(Dispatchers.IO) {
+                val queueFile = filesDir.resolve(PERSISTENT_QUEUE_FILE)
+                if (queueFile.exists()) {
                     runCatching {
-                        val restoredQueue = queue.toQueue()
-                        scope.launch {
+                        queueFile.inputStream().use { fis ->
+                            ObjectInputStream(fis).use { oos ->
+                                oos.readObject() as PersistQueue
+                            }
+                        }
+                    }.onSuccess { queue ->
+                        runCatching {
+                            val restoredQueue = queue.toQueue()
                             playerInitialized.first { it }
-                            if (isActive) {
-                                playQueue(
-                                    queue = restoredQueue,
-                                    playWhenReady = false,
-                                    restoringQueue = true,
-                                )
+                            withContext(Dispatchers.Main) {
+                                if (isActive) {
+                                    playQueue(
+                                        queue = restoredQueue,
+                                        playWhenReady = false,
+                                        restoringQueue = true,
+                                    )
+                                }
+                            }
+                        }.onFailure { error ->
+                            Timber.tag(TAG).w(error, "Failed to restore persisted queue, clearing data")
+                            clearPersistedQueueFiles()
+                        }
+                    }.onFailure { error ->
+                        Timber.tag(TAG).w(error, "Failed to read persisted queue, clearing data")
+                        clearPersistedQueueFiles()
+                    }
+                }
+
+                val automixFile = filesDir.resolve(PERSISTENT_AUTOMIX_FILE)
+                if (automixFile.exists()) {
+                    runCatching {
+                        automixFile.inputStream().use { fis ->
+                            ObjectInputStream(fis).use { oos ->
+                                oos.readObject() as PersistQueue
+                            }
+                        }
+                    }.onSuccess { queue ->
+                        runCatching {
+                            automixItems.value = queue.items.map { it.toMediaItem() }
+                        }.onFailure { error ->
+                            Timber.tag(TAG).w(error, "Failed to restore automix queue, clearing data")
+                            clearPersistedQueueFiles()
+                        }
+                    }.onFailure { error ->
+                        Timber.tag(TAG).w(error, "Failed to read automix queue, clearing data")
+                        clearPersistedQueueFiles()
+                    }
+                }
+
+                val playerStateFile = filesDir.resolve(PERSISTENT_PLAYER_STATE_FILE)
+                if (playerStateFile.exists()) {
+                    runCatching {
+                        playerStateFile.inputStream().use { fis ->
+                            ObjectInputStream(fis).use { oos ->
+                                oos.readObject() as PersistPlayerState
+                            }
+                        }
+                    }.onSuccess { playerState ->
+                        delay(1000) // Wait for queue to be loaded
+                        playerVolume.value = playerState.volume
+                        withContext(Dispatchers.Main) {
+                            if (playerState.currentMediaItemIndex < player.mediaItemCount) {
+                                player.seekTo(playerState.currentMediaItemIndex, playerState.currentPosition)
                             }
                         }
                     }.onFailure { error ->
-                        Timber.tag(TAG).w(error, "Failed to restore persisted queue, clearing data")
+                        Timber.tag(TAG).w(error, "Failed to read player state, clearing data")
                         clearPersistedQueueFiles()
                     }
-                }.onFailure { error ->
-                    Timber.tag(TAG).w(error, "Failed to read persisted queue, clearing data")
-                    clearPersistedQueueFiles()
-                }
-            }
-
-            val automixFile = filesDir.resolve(PERSISTENT_AUTOMIX_FILE)
-            if (automixFile.exists()) {
-                runCatching {
-                    automixFile.inputStream().use { fis ->
-                        ObjectInputStream(fis).use { oos ->
-                            oos.readObject() as PersistQueue
-                        }
-                    }
-                }.onSuccess { queue ->
-                    runCatching {
-                        automixItems.value = queue.items.map { it.toMediaItem() }
-                    }.onFailure { error ->
-                        Timber.tag(TAG).w(error, "Failed to restore automix queue, clearing data")
-                        clearPersistedQueueFiles()
-                    }
-                }.onFailure { error ->
-                    Timber.tag(TAG).w(error, "Failed to read automix queue, clearing data")
-                    clearPersistedQueueFiles()
-                }
-            }
-
-            val playerStateFile = filesDir.resolve(PERSISTENT_PLAYER_STATE_FILE)
-            if (playerStateFile.exists()) {
-                runCatching {
-                    playerStateFile.inputStream().use { fis ->
-                        ObjectInputStream(fis).use { oos ->
-                            oos.readObject() as PersistPlayerState
-                        }
-                    }
-                }.onSuccess { playerState ->
-                    scope.launch {
-                        delay(1000) // Wait for queue to be loaded
-                        // Don't restore repeat/shuffle from playerState as they are already set from DataStore (source of truth)
-                        // player.repeatMode = playerState.repeatMode
-                        // player.shuffleModeEnabled = playerState.shuffleModeEnabled
-                        playerVolume.value = playerState.volume
-
-                        if (playerState.currentMediaItemIndex < player.mediaItemCount) {
-                            player.seekTo(playerState.currentMediaItemIndex, playerState.currentPosition)
-                        }
-                    }
-                }.onFailure { error ->
-                    Timber.tag(TAG).w(error, "Failed to read player state, clearing data")
-                    clearPersistedQueueFiles()
                 }
             }
         }

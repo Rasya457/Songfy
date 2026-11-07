@@ -68,15 +68,17 @@ fun BottomSheet(
 ) {
     val density = LocalDensity.current
     
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                // background fades during about 10%-61% progress
-                alpha = (1.4f * (state.progress.coerceAtLeast(0.1f) - 0.1f).pow(0.5f)).coerceIn(0f, 1f)
-            }
-            .fillMaxSize(),
-        content = background
-    )
+    if (!state.isCollapsedOrDismissed) {
+        Box(
+            modifier = modifier
+                .graphicsLayer {
+                    // background fades during about 10%-61% progress
+                    alpha = (1.4f * (state.progress.coerceAtLeast(0.1f) - 0.1f).pow(0.5f)).coerceIn(0f, 1f)
+                }
+                .fillMaxSize(),
+            content = background
+        )
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -113,7 +115,7 @@ fun BottomSheet(
                 clip = true
             }
     ) {
-        if (!state.isCollapsed && !state.isDismissed) {
+        if (!state.isCollapsedOrDismissed) {
             PredictiveBackHandler { progress ->
                 val initialValue = state.value
                 try {
@@ -128,10 +130,8 @@ fun BottomSheet(
                     state.expandSoft()
                 }
             }
-        }
 
-        // main content
-        if (!state.isCollapsed) {
+            // main content
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
@@ -184,6 +184,10 @@ class BottomSheetState(
 
     val isCollapsed by derivedStateOf {
         value == collapsedBound
+    }
+
+    val isCollapsedOrDismissed by derivedStateOf {
+        value <= collapsedBound
     }
 
     val isExpanded by derivedStateOf {
