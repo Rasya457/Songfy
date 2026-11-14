@@ -197,12 +197,18 @@ private fun Modifier.tap(
             scaleX = pressScale.value
             scaleY = pressScale.value
         }
-        .clickable(
-            interactionSource = source,
-            indication = null,
-            enabled = enabled,
-            onClick = onClick,
-        )
+        .let { base ->
+            // Do not attach clickable when disabled so touches pass through to the expanded player
+            if (enabled) {
+                base.clickable(
+                    interactionSource = source,
+                    indication = null,
+                    onClick = onClick,
+                )
+            } else {
+                base
+            }
+        }
 }
 
 
@@ -272,6 +278,9 @@ fun LiquidGlassBottomBar(
     val isBarInteractive by remember(playerExpandProgress) {
         derivedStateOf { playerExpandProgress().coerceIn(0f, 1f) < 0.02f }
     }
+    val isBarFullyHidden by remember(playerExpandProgress) {
+        derivedStateOf { playerExpandProgress().coerceIn(0f, 1f) >= 0.45f }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -336,6 +345,7 @@ fun LiquidGlassBottomBar(
             else -> MiniHeight
         }
 
+        if (!isBarFullyHidden) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -546,6 +556,7 @@ fun LiquidGlassBottomBar(
                 }
             }
             }
+        }
         }
     }
 }
