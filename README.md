@@ -23,7 +23,7 @@
 
 <br/>
 
-[**Download**](#download-now) · [**Features**](#features) · [**FAQ**](#faq) · [**Support**](#support-the-project)
+[**Download**](#download-now) · [**Features**](#features) · [**Support**](#support-the-project)
 
 </div>
 
