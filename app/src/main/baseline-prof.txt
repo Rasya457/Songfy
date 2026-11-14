@@ -1,0 +1,10 @@
+HSPLandroidx/compose/**;->**(**)**
+HSPLandroidx/lifecycle/**;->**(**)**
+HSPLandroidx/navigation/**;->**(**)**
+HSPLandroidx/datastore/**;->**(**)**
+HSPLandroidx/room/**;->**(**)**
+HSPLandroidx/media3/**;->**(**)**
+HSPLcoil3/**;->**(**)**
+HSPLcom/metrolist/**;->**(**)**
+HSPLcom/songfy/**;->**(**)**
+
