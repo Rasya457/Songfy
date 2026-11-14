@@ -18,7 +18,7 @@
 
 <br/>
 
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=0d1117)](https://dsc.gg/metrolist)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=0d1117)](https://dsc.gg/msongfy)
 [![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white&labelColor=0d1117)](https://t.me/Ryousuka)
 
 <br/>
@@ -29,7 +29,7 @@
 
 > [!WARNING]
 > # MAINTENANCE MODE
-> Metrolist is currently in maintenance mode. This means we will only be fixing bugs and making minor improvements. Please do not submit PRs for new features or major changes, as they will not be accepted.  
+> Songfy is currently in maintenance mode. This means we will only be fixing bugs and making minor improvements. Please do not submit PRs for new features or major changes, as they will not be accepted.  
 > The app is **NOT** dead, please stay tuned for updates on our discord (found above).
 
 > [!WARNING]
@@ -184,7 +184,7 @@
 
 <h1>Disclaimer</h1>
 
-This project is **not affiliated with, funded, authorized, endorsed by, or in any way associated** with YouTube, Google LLC, Metrolist Group LLC, or any of their affiliates and subsidiaries.
+This project is **not affiliated with, funded, authorized, endorsed by, or in any way associated** with YouTube, Google LLC, Songfy Group LLC, or any of their affiliates and subsidiaries.
 
 All trademarks, service marks, and intellectual property rights referenced in this project belong to their respective owners.
 
