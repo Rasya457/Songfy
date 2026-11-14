@@ -207,8 +207,8 @@ fun SyncedLyricsView(
         }
     }
 
-    // Center active lyric line on line changes and when auto-follow resumes.
-    LaunchedEffect(lines, activeIndex, isAutoFollowing) {
+    // Center active lyric line on line changes, translation toggles, and when auto-follow resumes.
+    LaunchedEffect(lines, activeIndex, isAutoFollowing, showTranslation, translations) {
         if (!isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
         if (listState.isScrollInProgress && !isProgrammaticScroll) return@LaunchedEffect
         isProgrammaticScroll = true
@@ -432,7 +432,9 @@ fun SyncedLyricsView(
                     }
 
                     // Translation line (shown below original when enabled)
-                    val translationText = if (showTranslation) translations?.getOrNull(index) else null
+                    val translationText = if (showTranslation) {
+                        translations?.getOrNull(index)?.takeIf { it.isNotBlank() }
+                    } else null
                     AnimatedVisibility(
                         visible = translationText != null,
                         enter = fadeIn(tween(250)),

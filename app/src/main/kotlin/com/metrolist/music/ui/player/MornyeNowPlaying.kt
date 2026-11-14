@@ -147,6 +147,7 @@ import com.metrolist.music.LocalNavController
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.constants.KeepScreenOn
+import com.metrolist.music.constants.LyricsTranslationEnabledKey
 import com.metrolist.music.constants.ThumbnailCornerRadius
 import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.db.entities.LyricsEntity
@@ -265,10 +266,11 @@ fun MornyeNowPlaying(
     var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
     var keepScreenOn by rememberPreference(KeepScreenOn, false)
 
-    // Translation state (on-demand, Google Translate)
-    var showTranslation by remember { mutableStateOf(false) }
+    // Translation state (persisted across song changes & restarts until explicitly turned off)
+    var showTranslation by rememberPreference(LyricsTranslationEnabledKey, false)
     var isTranslating by remember { mutableStateOf(false) }
     var translatedLines by remember { mutableStateOf<List<String>?>(null) }
+    var showTranslationToastPending by remember { mutableStateOf(false) }
 
     var mode by remember { mutableStateOf(NowPlayingMode.PLAYER) }
     val isPlayerMode = mode == NowPlayingMode.PLAYER
@@ -452,11 +454,51 @@ fun MornyeNowPlaying(
         parsedLyrics = parsed
     }
 
-    // Reset translation when song changes
+    // Clear cached lines when song changes while keeping showTranslation enabled
     LaunchedEffect(mediaMetadata?.id) {
-        showTranslation = false
         isTranslating = false
         translatedLines = null
+    }
+
+    // Auto-translate whenever translation is enabled and a song's lyrics are loaded
+    LaunchedEffect(showTranslation, mediaMetadata?.id, parsedLyrics) {
+        if (!showTranslation || parsedLyrics.isEmpty() || translatedLines != null || isTranslating) {
+            return@LaunchedEffect
+        }
+        val songId = mediaMetadata?.id ?: return@LaunchedEffect
+        isTranslating = true
+        try {
+            val linesToTranslate = parsedLyrics.map { it.text }
+            val detectedLang = LyricsGoogleTranslator.detectLanguage(linesToTranslate)
+            if (detectedLang == "id") {
+                translatedLines = emptyList()
+                if (showTranslationToastPending) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.lyrics_translation_already_indonesian),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+                return@LaunchedEffect
+            }
+            val result = LyricsGoogleTranslator.translate(
+                context = context,
+                songId = songId,
+                lines = linesToTranslate,
+            )
+            if (result != null) {
+                translatedLines = result
+            } else if (showTranslationToastPending) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.lyrics_translation_network_error),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        } finally {
+            isTranslating = false
+            showTranslationToastPending = false
+        }
     }
 
     val isEpisode = currentSong?.song?.isEpisode == true
@@ -922,45 +964,11 @@ fun MornyeNowPlaying(
                                         if (lyricsAutoHide.controlsOpen) lyricsAutoHide.userInteracted()
                                         if (showTranslation) {
                                             showTranslation = false
-                                        } else if (translatedLines != null) {
-                                            showTranslation = true
                                         } else {
-                                            coroutineScope.launch {
-                                                isTranslating = true
-                                                try {
-                                                    val songId = mediaMetadata?.id ?: return@launch
-                                                    val linesToTranslate = parsedLyrics.map { it.text }
-                                                    if (linesToTranslate.isEmpty()) return@launch
-
-                                                    // Detect source language; skip if already Indonesian
-                                                    val detectedLang = LyricsGoogleTranslator.detectLanguage(linesToTranslate)
-                                                    if (detectedLang == "id") {
-                                                        Toast.makeText(
-                                                            context,
-                                                            context.getString(R.string.lyrics_translation_already_indonesian),
-                                                            Toast.LENGTH_SHORT,
-                                                        ).show()
-                                                        return@launch
-                                                    }
-                                                    val result = LyricsGoogleTranslator.translate(
-                                                        context = context,
-                                                        songId = songId,
-                                                        lines = linesToTranslate,
-                                                    )
-                                                    if (result != null) {
-                                                        translatedLines = result
-                                                        showTranslation = true
-                                                    } else {
-                                                        Toast.makeText(
-                                                            context,
-                                                            context.getString(R.string.lyrics_translation_network_error),
-                                                            Toast.LENGTH_SHORT,
-                                                        ).show()
-                                                    }
-                                                } finally {
-                                                    isTranslating = false
-                                                }
+                                            if (translatedLines == null) {
+                                                showTranslationToastPending = true
                                             }
+                                            showTranslation = true
                                         }
                                     },
                                 )
