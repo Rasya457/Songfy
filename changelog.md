@@ -1,25 +1,15 @@
----v13.7.0
+---v1.1.0
 ## Highlights
-- Rebranded application metadata, packaging, and links for Songfy
-- Migrated networking to InnerTubeX with automatic client fallback
-- Reduced memory use and background work in large libraries, History, Cache, Android Auto, and audio processing
-- Improved uploads, downloads, caching, metadata editing, and playlist management
+- Added Love button next to the 3-dots menu in Now Playing (synced with Liked Songs library)
+- Added Keep screen on toggle in the Now Playing 3-dots menu
+- Pressing Back from Lyrics or Continue Playing now returns to Now Playing before closing the player
+- Fixed Now Playing bottom bar buttons (Lyrics, Audio Output, Continue Playing) being blocked by hidden navigation bar
+- Updated About screen branding, Songfy icon, and developer links
+
+## Previous
+- Rebranded application metadata, packaging (`com.songfy.music`), and links for Songfy
 - Updated network security configuration to enforce HTTPS by default
-
-## New features
-- Choose whether songs are added to the start or end of playlists
-- Added Zemer lyrics for Jewish music
-- Added detailed, copyable playback error reports
-- Added Inception AI models and improved lyric translation output
 - Dynamic Wrapped year tracking
-- Restored universal x86 and x86_64 support
-
-## Fixes and improvements
-- Fixed missing or cropped artwork and improved timed and Cyrillic lyrics
-- Preserved manual metadata edits during refreshes and corrected Cache Playlist contents
-- Fixed repeat and shuffle with crossfade, Listen Together stutter, and paused queues restarting at the end
-- Fixed per-song volume normalization and improved playback recovery
-- Fixed dismissed media controls reappearing and several startup crashes
 - Removed obsolete updater unit tests and updated CI workflows for Songfy
 
 **Source**: https://github.com/Rasya457/Songfy

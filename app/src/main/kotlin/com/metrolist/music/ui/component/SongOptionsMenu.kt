@@ -61,6 +61,7 @@ fun SongOptionsMenu(
     isCached: Boolean = true,
     isDownloaded: Boolean = false,
     isLocal: Boolean = false,
+    keepScreenOn: Boolean = false,
     width: Dp = MenuDefaultWidth,
     onDismiss: () -> Unit,
     onAction: (String) -> Unit = {},
@@ -235,6 +236,12 @@ fun SongOptionsMenu(
                 icon = SongfyIcons.Moon,
                 title = "Sleep timer",
                 onClick = { onAction("sleep") },
+            )
+            MenuRow(
+                icon = SongfyIcons.Sun,
+                title = "Keep screen on",
+                subtitle = if (keepScreenOn) "On" else "Off",
+                onClick = { onAction("keep_screen_on") },
             )
             MenuRow(
                 icon = SongfyIcons.Sliders,

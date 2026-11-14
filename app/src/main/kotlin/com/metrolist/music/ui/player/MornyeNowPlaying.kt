@@ -59,6 +59,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.LruCache
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -145,7 +146,9 @@ import com.metrolist.music.LocalDownloadUtil
 import com.metrolist.music.LocalNavController
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.KeepScreenOn
 import com.metrolist.music.constants.ThumbnailCornerRadius
+import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.db.entities.LyricsEntity
 import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.lyrics.LrcParser
@@ -260,6 +263,7 @@ fun MornyeNowPlaying(
     var showSleepTimerDialog by rememberSaveable { mutableStateOf(false) }
     var showCastDialog by rememberSaveable { mutableStateOf(false) }
     var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+    var keepScreenOn by rememberPreference(KeepScreenOn, false)
 
     // Translation state (on-demand, Google Translate)
     var showTranslation by remember { mutableStateOf(false) }
@@ -268,6 +272,11 @@ fun MornyeNowPlaying(
 
     var mode by remember { mutableStateOf(NowPlayingMode.PLAYER) }
     val isPlayerMode = mode == NowPlayingMode.PLAYER
+
+    // Return to Now Playing before collapsing the sheet when viewing Lyrics or Queue
+    BackHandler(enabled = !isPlayerMode && !state.isClosingOrCollapsed) {
+        mode = NowPlayingMode.PLAYER
+    }
     val artworkPulse = remember { Animatable(0f) }
     var isScrubbing by remember { mutableStateOf(false) }
     var isVolumeDragging by remember { mutableStateOf(false) }
@@ -856,6 +865,19 @@ fun MornyeNowPlaying(
                                 )
                             }
                             IconButton(
+                                onClick = { playerConnection.toggleLike() },
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(
+                                        if (isFavorite) R.drawable.favorite else R.drawable.favorite_border,
+                                    ),
+                                    contentDescription = if (isFavorite) "Unlike" else "Like",
+                                    tint = if (isFavorite) Color(0xFFFF3B5C) else Color.White,
+                                    modifier = Modifier.size(21.dp),
+                                )
+                            }
+                            IconButton(
                                 onClick = onMoreClick,
                                 modifier = Modifier.size(40.dp),
                             ) {
@@ -996,6 +1018,31 @@ fun MornyeNowPlaying(
                             }
 
                             Spacer(modifier = Modifier.width(12.dp))
+
+                            // Circular ♥ Favorite button (integrated with Liked Songs library)
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.22f))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(bounded = true, radius = 18.dp),
+                                        onClick = { playerConnection.toggleLike() },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    painter = painterResource(
+                                        if (isFavorite) R.drawable.favorite else R.drawable.favorite_border,
+                                    ),
+                                    contentDescription = if (isFavorite) "Unlike" else "Like",
+                                    tint = if (isFavorite) Color(0xFFFF3B5C) else Color.White,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
 
                             // Circular ⋯ button
                             Box(
@@ -1164,6 +1211,7 @@ fun MornyeNowPlaying(
                 isCached = isCached,
                 isDownloaded = isDownloaded,
                 isLocal = isLocal,
+                keepScreenOn = keepScreenOn,
                 onDismiss = { showSongOptionsMenu = false },
                 onAction = { action ->
                     showSongOptionsMenu = false
@@ -1236,6 +1284,9 @@ fun MornyeNowPlaying(
                         }
                         "sleep" -> {
                             showSleepTimerDialog = true
+                        }
+                        "keep_screen_on" -> {
+                            keepScreenOn = !keepScreenOn
                         }
                         "lyrics_offset" -> {
                             showLyricsOffsetDialog = true

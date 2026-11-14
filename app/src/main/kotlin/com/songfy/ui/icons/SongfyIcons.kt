@@ -910,6 +910,21 @@ object SongfyIcons {
         }.build()
     }
 
+    /** Sun — ikon matahari iOS untuk Keep Screen On (sun.max). */
+    val Sun: ImageVector by lazy {
+        strokePath("songfy_sun", 1.8f) {
+            moveTo(15.5f, 12f); arcToRelative(3.5f, 3.5f, 0f, true, true, -7f, 0f); arcToRelative(3.5f, 3.5f, 0f, true, true, 7f, 0f)
+            moveTo(12f, 3.2f); lineTo(12f, 5.4f)
+            moveTo(12f, 18.6f); lineTo(12f, 20.8f)
+            moveTo(3.2f, 12f); lineTo(5.4f, 12f)
+            moveTo(18.6f, 12f); lineTo(20.8f, 12f)
+            moveTo(5.8f, 5.8f); lineTo(7.3f, 7.3f)
+            moveTo(16.7f, 16.7f); lineTo(18.2f, 18.2f)
+            moveTo(18.2f, 5.8f); lineTo(16.7f, 7.3f)
+            moveTo(7.3f, 16.7f); lineTo(5.8f, 18.2f)
+        }
+    }
+
     /** History — jam dengan panah putar iOS (clock.arrow.circlepath). */
     val History: ImageVector by lazy {
         strokePath("songfy_history", 2.1f) {
