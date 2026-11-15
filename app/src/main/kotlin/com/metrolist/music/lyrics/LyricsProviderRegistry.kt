@@ -41,17 +41,17 @@ object LyricsProviderRegistry {
     }
 
     fun getDefaultProviderOrder(): List<String> = listOf(
+        "LyricsPlus",
         "BetterLyrics",
+        "Paxsenix",
+        "lrc.red",
         "LrcLib",
         "KuGou",
-        "Paxsenix",
-        "LyricsPlus",
+        "Unison",
         "Zemer",
+        "Megalobiz",
         "YouTubeSubtitle",
         "YouTube",
-        "lrc.red",
-        "Unison",
-        "Megalobiz",
         "Genius",
     )
 

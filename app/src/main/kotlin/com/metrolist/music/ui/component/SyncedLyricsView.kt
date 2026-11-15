@@ -70,6 +70,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import com.metrolist.music.constants.LyricsClickKey
+import com.metrolist.music.constants.LyricsLineSpacingKey
+import com.metrolist.music.constants.LyricsScrollKey
+import com.metrolist.music.constants.LyricsTextPositionKey
+import com.metrolist.music.constants.LyricsTextSizeKey
+import com.metrolist.music.ui.screens.settings.LyricsPosition
+import com.metrolist.music.utils.rememberEnumPreference
+import com.metrolist.music.utils.rememberPreference
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -145,6 +153,12 @@ fun SyncedLyricsView(
         return
     }
 
+    val lyricsPosition by rememberEnumPreference(LyricsTextPositionKey, LyricsPosition.LEFT)
+    val lyricsClick by rememberPreference(LyricsClickKey, defaultValue = true)
+    val lyricsScroll by rememberPreference(LyricsScrollKey, defaultValue = true)
+    val lyricsTextSize by rememberPreference(LyricsTextSizeKey, defaultValue = 24f)
+    val lyricsLineSpacing by rememberPreference(LyricsLineSpacingKey, defaultValue = 1.2f)
+
     // Frame-clock ticker for continuous 60/120 FPS draw phase updates without recomposition
     var animTick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
@@ -208,8 +222,8 @@ fun SyncedLyricsView(
     }
 
     // Center active lyric line on line changes, translation toggles, and when auto-follow resumes.
-    LaunchedEffect(lines, activeIndex, isAutoFollowing, showTranslation, translations) {
-        if (!isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
+    LaunchedEffect(lines, activeIndex, isAutoFollowing, lyricsScroll, showTranslation, translations) {
+        if (!lyricsScroll || !isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
         if (listState.isScrollInProgress && !isProgrammaticScroll) return@LaunchedEffect
         isProgrammaticScroll = true
         try {
@@ -308,7 +322,7 @@ fun SyncedLyricsView(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(top = 28.dp, bottom = bottomContentPadding, start = 20.dp, end = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
+            verticalArrangement = Arrangement.spacedBy((18f * lyricsLineSpacing).dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             itemsIndexed(
@@ -377,6 +391,22 @@ fun SyncedLyricsView(
                     label = "lyricsLineBlur",
                 )
 
+                val columnAlignment = when (lyricsPosition) {
+                    LyricsPosition.LEFT -> Alignment.Start
+                    LyricsPosition.CENTER -> Alignment.CenterHorizontally
+                    LyricsPosition.RIGHT -> Alignment.End
+                }
+                val textAlignment = when (lyricsPosition) {
+                    LyricsPosition.LEFT -> TextAlign.Start
+                    LyricsPosition.CENTER -> TextAlign.Center
+                    LyricsPosition.RIGHT -> TextAlign.End
+                }
+                val flowArrangement = when (lyricsPosition) {
+                    LyricsPosition.LEFT -> Arrangement.Start
+                    LyricsPosition.CENTER -> Arrangement.Center
+                    LyricsPosition.RIGHT -> Arrangement.End
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -392,18 +422,18 @@ fun SyncedLyricsView(
                         }
                         .clip(RoundedCornerShape(10.dp))
                         .clickable(
-                            enabled = line.startMs >= 0,
+                            enabled = lyricsClick && line.startMs >= 0,
                             interactionSource = lyricItemInteraction,
                             indication = null,
                         ) {
                             isAutoFollowing = true
                             onSeek(line.startMs)
                         },
-                    horizontalAlignment = Alignment.Start,
+                    horizontalAlignment = columnAlignment,
                 ) {
                     if (isCurrent && line.isWordSynced) {
                         FlowRow(
-                            horizontalArrangement = Arrangement.Start,
+                            horizontalArrangement = flowArrangement,
                             verticalArrangement = Arrangement.Center,
                         ) {
                             line.words.forEachIndexed { wi, word ->
@@ -411,7 +441,7 @@ fun SyncedLyricsView(
                                     word = word,
                                     positionProvider = positionProvider,
                                     animTick = animTick,
-                                    fontSize = 28.sp,
+                                    fontSize = (lyricsTextSize + 4f).sp,
                                     fontWeight = FontWeight.Bold,
                                     fontStyle = FontStyle.Italic,
                                 )
@@ -424,10 +454,10 @@ fun SyncedLyricsView(
                         Text(
                             text = line.text,
                             color = Color.White,
-                            fontSize = 28.sp,
+                            fontSize = (lyricsTextSize + 4f).sp,
                             fontWeight = FontWeight.Bold,
                             fontStyle = FontStyle.Italic,
-                            textAlign = TextAlign.Start,
+                            textAlign = textAlignment,
                         )
                     }
 
@@ -445,10 +475,10 @@ fun SyncedLyricsView(
                             Text(
                                 text = translationText,
                                 color = Color.White.copy(alpha = if (isCurrent) 0.75f else 0.40f),
-                                fontSize = 16.sp,
+                                fontSize = (lyricsTextSize * 0.67f).sp,
                                 fontStyle = FontStyle.Normal,
                                 fontWeight = FontWeight.Normal,
-                                textAlign = TextAlign.Start,
+                                textAlign = textAlignment,
                             )
                         }
                     }
@@ -460,9 +490,9 @@ fun SyncedLyricsView(
                             Text(
                                 text = tr,
                                 color = Color.White.copy(alpha = if (isCurrent) 0.70f else 0.35f),
-                                fontSize = 15.sp,
+                                fontSize = (lyricsTextSize * 0.58f).sp,
                                 fontStyle = FontStyle.Italic,
-                                textAlign = TextAlign.Start,
+                                textAlign = textAlignment,
                             )
                         }
                     }

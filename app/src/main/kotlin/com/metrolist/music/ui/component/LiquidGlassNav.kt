@@ -72,6 +72,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -88,6 +91,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -96,14 +100,22 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import coil3.compose.AsyncImage
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.CropAlbumArtKey
+import com.metrolist.music.constants.MiniPlayerBackgroundStyle
+import com.metrolist.music.constants.MiniPlayerBackgroundStyleKey
+import com.metrolist.music.constants.PureBlackMiniPlayerKey
+import com.metrolist.music.constants.SwipeThumbnailKey
 import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.ui.screens.Screens
+import com.metrolist.music.utils.rememberEnumPreference
+import com.metrolist.music.utils.rememberPreference
 import com.songfy.ui.FLING_PROJECTION
 import com.songfy.ui.PillShape
 import com.songfy.ui.SPRING_STIFFNESS
@@ -113,6 +125,8 @@ import com.songfy.ui.icons.SongfyIconStyle
 import com.songfy.ui.icons.SongfyIcons
 import com.songfy.ui.icons.SongfyTabIcon
 import com.songfy.ui.icons.toSongfyIcon
+import com.songfy.ui.backdrop.backdrops.layerBackdrop
+import com.songfy.ui.backdrop.backdrops.rememberLayerBackdrop
 import com.songfy.ui.songfyLiquidGlass
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -281,6 +295,16 @@ fun LiquidGlassBottomBar(
     val isBarFullyHidden by remember(playerExpandProgress) {
         derivedStateOf { playerExpandProgress().coerceIn(0f, 1f) >= 0.45f }
     }
+    if (isBarFullyHidden) return
+
+    val miniPlayerBackground by rememberEnumPreference(
+        MiniPlayerBackgroundStyleKey,
+        defaultValue = MiniPlayerBackgroundStyle.DEFAULT,
+    )
+    val pureBlackMiniPlayer by rememberPreference(PureBlackMiniPlayerKey, defaultValue = false)
+    val cropAlbumArt by rememberPreference(CropAlbumArtKey, defaultValue = false)
+    val swipeThumbnail by rememberPreference(SwipeThumbnailKey, defaultValue = true)
+    val layoutDirection = LocalLayoutDirection.current
 
     BoxWithConstraints(
         modifier = modifier
@@ -303,34 +327,30 @@ fun LiquidGlassBottomBar(
         val itemW = if (n > 0) (wc - 2f * pad) / n else 0f
         val lastIndex = (n - 1).coerceAtLeast(0).toFloat()
 
-        // ── BitChord draw-phase pill Animatable & Spec ──
-        val position = remember { Animatable(state.selectedTab.toFloat()) }
+        // ── BitChord travelling glass pill motion & exported backdrops ──
+        val pillMotion = remember(scope) { GlassPillMotion(scope, state.selectedTab) }
+        val barGlass = rememberLayerBackdrop()
+        val tabRowBackdrop = rememberLayerBackdrop()
         var tabWidthPx by remember { mutableFloatStateOf(itemW) }
-        LaunchedEffect(itemW) {
-            if (itemW > 0f) tabWidthPx = itemW
-        }
-
-        val spec = remember(reducedMotion) {
-            if (reducedMotion) {
-                snap()
-            } else {
-                spring<Float>(dampingRatio = 1f, stiffness = SPRING_STIFFNESS)
+        var dragPos by remember { mutableFloatStateOf(state.selectedTab.toFloat()) }
+        LaunchedEffect(itemW, d, reducedMotion) {
+            if (itemW > 0f) {
+                tabWidthPx = itemW
+                pillMotion.stepDp = itemW / d
             }
+            pillMotion.reduceMotion = reducedMotion
         }
 
         LaunchedEffect(state.selectedTab) {
-            if (position.targetValue.roundToInt() != state.selectedTab) {
-                position.animateTo(state.selectedTab.toFloat(), spec)
+            if (pillMotion.index != state.selectedTab) {
+                pillMotion.animateTo(state.selectedTab)
             }
         }
 
         val dragState = rememberDraggableState { deltaPx ->
             if (tabWidthPx > 0f) {
-                scope.launch {
-                    position.snapTo(
-                        (position.value + deltaPx / tabWidthPx).coerceIn(0f, lastIndex)
-                    )
-                }
+                dragPos = (dragPos + deltaPx / tabWidthPx).coerceIn(0f, lastIndex)
+                pillMotion.dragTo(dragPos)
             }
         }
 
@@ -353,26 +373,108 @@ fun LiquidGlassBottomBar(
         ) {
             // ── 1) Mini Player Pill ──────────────────────────
             if (effectiveShowMiniPlayer) {
-                Box(
-                    modifier = Modifier
-                        .offset {
-                            val p = miniProgress.value
-                            IntOffset(
-                                lerp(0f, circle + gap, p).roundToInt(),
-                                lerp(0f, total - miniH, p).roundToInt(),
-                            )
-                        }
-                        .fixedSize(
-                            w = { lerp(wc, wc - 2f * (circle + gap), miniProgress.value) },
-                            h = { miniH },
+                var dragAccumulated by remember { mutableFloatStateOf(0f) }
+                val effectiveMiniStyle =
+                    if (miniPlayerBackground == MiniPlayerBackgroundStyle.DEFAULT && pureBlackMiniPlayer) {
+                        MiniPlayerBackgroundStyle.PURE_BLACK
+                    } else {
+                        miniPlayerBackground
+                    }
+                val miniPillModifier = Modifier
+                    .offset {
+                        val p = miniProgress.value
+                        IntOffset(
+                            lerp(0f, circle + gap, p).roundToInt(),
+                            lerp(0f, total - miniH, p).roundToInt(),
                         )
-                        .graphicsLayer {
-                            val ep = playerExpandProgress().coerceIn(0f, 1f)
-                            alpha = (1f - ep * 2.4f).coerceIn(0f, 1f)
-                            translationY = ep * 20.dp.toPx()
+                    }
+                    .fixedSize(
+                        w = { lerp(wc, wc - 2f * (circle + gap), miniProgress.value) },
+                        h = { miniH },
+                    )
+                    .graphicsLayer {
+                        val ep = playerExpandProgress().coerceIn(0f, 1f)
+                        alpha = (1f - ep * 2.4f).coerceIn(0f, 1f)
+                        translationY = ep * 20.dp.toPx()
+                    }
+                    .let { base ->
+                        if (swipeThumbnail && isBarInteractive) {
+                            base.pointerInput(layoutDirection, playerConnection) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { dragAccumulated = 0f },
+                                    onDragEnd = {
+                                        val threshold = 80f
+                                        val directed = if (layoutDirection == LayoutDirection.Rtl) -dragAccumulated else dragAccumulated
+                                        if (directed < -threshold) {
+                                            playerConnection.player.seekToNext()
+                                        } else if (directed > threshold) {
+                                            playerConnection.player.seekToPrevious()
+                                        }
+                                        dragAccumulated = 0f
+                                    },
+                                    onDragCancel = { dragAccumulated = 0f },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        dragAccumulated += dragAmount
+                                    },
+                                )
+                            }
+                        } else base
+                    }
+                    .let { base ->
+                        when (effectiveMiniStyle) {
+                            MiniPlayerBackgroundStyle.DEFAULT ->
+                                base.songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = PillShape)
+                            MiniPlayerBackgroundStyle.TRANSPARENT ->
+                                base
+                                    .shadow(8.dp, PillShape)
+                                    .clip(PillShape)
+                                    .background(Color.Black.copy(alpha = 0.25f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.14f), PillShape)
+                            MiniPlayerBackgroundStyle.BLUR ->
+                                base
+                                    .shadow(16.dp, PillShape)
+                                    .clip(PillShape)
+                                    .background(Color.Black.copy(alpha = 0.65f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.12f), PillShape)
+                            MiniPlayerBackgroundStyle.GRADIENT ->
+                                base
+                                    .shadow(16.dp, PillShape)
+                                    .clip(PillShape)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.80f),
+                                                Color.Black.copy(alpha = 0.88f),
+                                            ),
+                                        ),
+                                    )
+                                    .border(1.dp, Color.White.copy(alpha = 0.12f), PillShape)
+                            MiniPlayerBackgroundStyle.PURE_BLACK ->
+                                base
+                                    .shadow(16.dp, PillShape)
+                                    .clip(PillShape)
+                                    .background(Color.Black)
+                                    .border(1.dp, Color.White.copy(alpha = 0.10f), PillShape)
                         }
-                        .songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = PillShape)
-                ) {
+                    }
+
+                Box(modifier = miniPillModifier) {
+                    if (effectiveMiniStyle == MiniPlayerBackgroundStyle.BLUR && mediaMetadata.thumbnailUrl != null) {
+                        AsyncImage(
+                            model = mediaMetadata.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .let { m -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) m.blur(20.dp) else m },
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.45f)),
+                        )
+                    }
                     MiniPlayerContent(
                         title = mediaMetadata.title,
                         artist = mediaMetadata.artists.joinToString { it.name },
@@ -381,6 +483,7 @@ fun LiquidGlassBottomBar(
                         progress = miniProgress,
                         density = d,
                         enabled = isBarInteractive,
+                        cropAlbumArt = cropAlbumArt,
                         onPlayPause = {
                             if (isPlaying) {
                                 playerConnection.player.pause()
@@ -414,7 +517,12 @@ fun LiquidGlassBottomBar(
                         alpha = (1f - ep * 2.8f).coerceIn(0f, 1f)
                         translationY = ep * 72.dp.toPx()
                     }
-                    .songfyLiquidGlass(dark = dark, shadowElevation = 16.dp, shape = PillShape)
+                    .songfyLiquidGlass(
+                        dark = dark,
+                        shadowElevation = 16.dp,
+                        shape = PillShape,
+                        exportedBackdrop = barGlass,
+                    )
                     .draggable(
                         state = dragState,
                         orientation = Orientation.Horizontal,
@@ -423,10 +531,14 @@ fun LiquidGlassBottomBar(
                         enabled = progress.value < 0.5f &&
                                 n > 1 &&
                                 isBarInteractive,
+                        onDragStarted = {
+                            dragPos = pillMotion.position
+                            pillMotion.startDrag()
+                        },
                         onDragStopped = { velocityPxPerSec ->
                             if (tabWidthPx > 0f) {
                                 val vIdx = velocityPxPerSec / tabWidthPx
-                                val target = (position.value + vIdx * FLING_PROJECTION)
+                                val target = (dragPos + vIdx * FLING_PROJECTION)
                                     .roundToInt()
                                     .coerceIn(0, lastIndex.toInt())
                                 if (target != state.selectedTab) {
@@ -435,39 +547,44 @@ fun LiquidGlassBottomBar(
                                     onNavItemClick(screen, isSelected)
                                     state.selectedTab = target
                                 }
-                                scope.launch {
-                                    position.animateTo(target.toFloat(), spec, initialVelocity = vIdx)
-                                }
+                                pillMotion.release(target)
                             }
                         },
                     )
             ) {
-                // Lens indicator behind active tab:
-                // Evaluated ONLY in graphicsLayer {} (draw phase) - 0 recomposition & 0 layout pass!
-                if (n > 0) {
-                    Box(
-                        Modifier
-                            .fixedSize(
-                                w = { itemW },
-                                h = { barH - 2f * pad },
-                            )
-                            .graphicsLayer {
-                                val p = position.value
-                                translationX = pad + p * itemW
-                                translationY = pad
-                                val f = p - floor(p)
-                                val bump = 4f * f * (1f - f)
-                                scaleX = 1f + STRETCH * bump
-                                scaleY = 1f - SQUASH * bump
-                                alpha = (1f - progress.value * 2.5f).coerceIn(0f, 1f)
-                            }
-                            .clip(PillShape)
-                            .background(pillFill)
-                            .border(0.5.dp, Color.White.copy(alpha = if (dark) 0.12f else 0.20f), PillShape),
+                val pillCenter = {
+                    val x = pad + (pillMotion.position + 0.5f) * itemW
+                    val y = barH * 0.5f
+                    androidx.compose.ui.geometry.Offset(x, y)
+                }
+                val restW = itemW
+                val restH = barH - 2f * pad
+                val growW = 14f * d
+                val growH = PILL_GROW_HEIGHT.value * d
+                val pillSize = {
+                    val baseW = lerp(restW, restW + growW, pillMotion.liftX)
+                    val baseH = lerp(restH, restH + growH, pillMotion.liftY)
+                    val dev = pillMotion.deviation
+                    androidx.compose.ui.geometry.Size(
+                        width = (baseW * (1f + dev)).coerceAtLeast(1f),
+                        height = (baseH * (1f - dev)).coerceAtLeast(1f),
                     )
                 }
 
-                // Tab items
+                // Flat resting pill behind tabs
+                if (n > 0 && pillMotion.isFlat && progress.value < 0.4f) {
+                    FlatSelectionPill(
+                        color = pillFill,
+                        modifier = Modifier
+                            .pillPlacement(center = pillCenter, size = pillSize)
+                            .graphicsLayer {
+                                alpha = (1f - progress.value * 2.5f).coerceIn(0f, 1f)
+                            },
+                    )
+                }
+
+                // Tab items recorded into tabRowBackdrop so the lifted GlassSelectionPill can refract them
+                Box(modifier = Modifier.fillMaxSize().layerBackdrop(tabRowBackdrop)) {
                 navigationItems.forEachIndexed { i, screen ->
                     val selected = state.selectedTab == i
                     val isSearch = screen == Screens.Search
@@ -510,6 +627,22 @@ fun LiquidGlassBottomBar(
                                     }
                                 }
                             ),
+                    )
+                }
+                }
+
+                // Lifted travelling GlassSelectionPill above tabs (BitChord style)
+                if (n > 0 && !pillMotion.isFlat && progress.value < 0.4f) {
+                    GlassSelectionPill(
+                        motion = pillMotion,
+                        fillColor = pillFill,
+                        barGlass = barGlass,
+                        tabRow = tabRowBackdrop,
+                        modifier = Modifier
+                            .pillPlacement(center = pillCenter, size = pillSize)
+                            .graphicsLayer {
+                                alpha = (1f - progress.value * 2.5f).coerceIn(0f, 1f)
+                            },
                     )
                 }
             }
@@ -619,6 +752,7 @@ internal fun MiniPlayerContent(
     progress: State<Float>,
     density: Float,
     enabled: Boolean = true,
+    cropAlbumArt: Boolean = false,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onClick: () -> Unit,
@@ -640,7 +774,7 @@ internal fun MiniPlayerContent(
                 AsyncImage(
                     model = thumbnailUrl,
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    contentScale = if (cropAlbumArt) ContentScale.Crop else ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {

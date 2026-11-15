@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +45,15 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import com.songfy.ui.backdrop.Backdrop
+import com.songfy.ui.backdrop.backdrops.LayerBackdrop
+import com.songfy.ui.backdrop.drawBackdrop
+import com.songfy.ui.backdrop.effects.blur
+import com.songfy.ui.backdrop.effects.colorControls
+import com.songfy.ui.backdrop.effects.lens
+import com.songfy.ui.backdrop.highlight.Highlight
+import com.songfy.ui.backdrop.shadow.Shadow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -83,19 +94,10 @@ fun rememberReducedTransparency(): Boolean {
     val context = LocalContext.current
     return remember(context) {
         val cr = context.contentResolver
-        val wm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            context.getSystemService(WindowManager::class.java)
-        } else null
-        val windowBlurDisabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            wm != null && !wm.isCrossWindowBlurEnabled
-        } else false
         val settingReduce = runCatching {
             Settings.Secure.getInt(cr, "accessibility_reduce_transparency", 0) == 1
         }.getOrDefault(false)
-        val settingDisableBlurs = runCatching {
-            Settings.Global.getInt(cr, "disable_window_blurs", 0) == 1
-        }.getOrDefault(false)
-        windowBlurDisabled || settingReduce || settingDisableBlurs
+        settingReduce
     }
 }
 
@@ -127,6 +129,10 @@ fun rememberHighContrast(): Boolean {
  *   - prefers-reduced-transparency: naikkan opacity jadi lebih solid (0.96f), matikan blur.
  *   - prefers-contrast: latar belakang solid (1.0f) dengan border tegas berbobot 1.5dp.
  */
+val LocalSongfyBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+private val DefaultGlassHighlight: () -> Highlight = { Highlight.Default }
+private val DefaultGlassShadow: () -> Shadow = { Shadow.Default }
+
 @Composable
 fun Modifier.songfyLiquidGlass(
     dark: Boolean,
@@ -134,9 +140,50 @@ fun Modifier.songfyLiquidGlass(
     shape: Shape = PillShape,
     reducedTransparency: Boolean = rememberReducedTransparency(),
     highContrast: Boolean = rememberHighContrast(),
+    exportedBackdrop: LayerBackdrop? = null,
 ): Modifier {
     val tint = if (dark) Color(0xFF121212) else Color(0xFFFAFAFA)
     val blurSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !reducedTransparency
+    val backdrop = LocalSongfyBackdrop.current
+
+    if (blurSupported && !highContrast && backdrop != null && shape is CornerBasedShape) {
+        val density = LocalDensity.current
+        val resolutionScale = 0.25f
+        val blurPx = with(density) { 8.dp.toPx() } * resolutionScale
+        val lensHeightPx = with(density) { (0.5f * 48f).dp.toPx() } * resolutionScale
+        val lensAmountPx = with(density) { (0.5f * 48f).dp.toPx() } * resolutionScale
+        val surfaceTintColor = tint.copy(alpha = 0.40f)
+        val shapeLambda = remember(shape) { { shape } }
+        val effectsLambda: com.songfy.ui.backdrop.BackdropEffectScope.() -> Unit =
+            remember(blurPx, lensHeightPx, lensAmountPx) {
+                {
+                    colorControls(saturation = 1.5f)
+                    blur(blurPx)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        lens(
+                            refractionHeight = lensHeightPx,
+                            refractionAmount = lensAmountPx,
+                            depthEffect = true,
+                            chromaticAberration = true,
+                        )
+                    }
+                }
+            }
+        val onDrawSurfaceLambda: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit =
+            remember(surfaceTintColor) {
+                { drawRect(color = surfaceTintColor, size = size) }
+            }
+        return this.drawBackdrop(
+            backdrop = backdrop,
+            shape = shapeLambda,
+            effects = effectsLambda,
+            highlight = DefaultGlassHighlight,
+            shadow = DefaultGlassShadow,
+            onDrawSurface = onDrawSurfaceLambda,
+            exportedBackdrop = exportedBackdrop,
+            backdropScale = resolutionScale,
+        )
+    }
 
     val base = this
         .shadow(

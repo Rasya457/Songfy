@@ -146,10 +146,35 @@ import com.metrolist.music.LocalDownloadUtil
 import com.metrolist.music.LocalNavController
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.constants.CropAlbumArtKey
+import com.metrolist.music.constants.HidePlayerThumbnailKey
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.text.style.TextDecoration
 import com.metrolist.music.constants.KeepScreenOn
+import com.metrolist.music.constants.LyricsProviderOrderKey
 import com.metrolist.music.constants.LyricsTranslationEnabledKey
+import com.metrolist.music.lyrics.LyricsProviderRegistry
+import kotlinx.coroutines.withTimeoutOrNull
+import com.metrolist.music.constants.PlayerBackgroundStyle
+import com.metrolist.music.constants.PlayerBackgroundStyleKey
+import com.metrolist.music.constants.PlayerButtonsStyle
+import com.metrolist.music.constants.PlayerButtonsStyleKey
+import com.metrolist.music.constants.SliderStyle
+import com.metrolist.music.constants.SliderStyleKey
+import com.metrolist.music.constants.SquigglySliderKey
+import com.metrolist.music.constants.SwipeThumbnailKey
 import com.metrolist.music.constants.ThumbnailCornerRadius
+import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.platform.LocalLayoutDirection
+import com.metrolist.music.ui.component.SquigglySlider
+import com.metrolist.music.ui.component.WavySlider
 import com.metrolist.music.db.entities.LyricsEntity
 import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.lyrics.LrcParser
@@ -216,6 +241,8 @@ private class MorphArtworkShape(
     }
 }
 
+private val translationCache = android.util.LruCache<String, List<String>>(24)
+
 private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
     val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
     return t * t * (3f - 2f * t)
@@ -264,7 +291,18 @@ fun MornyeNowPlaying(
     var showSleepTimerDialog by rememberSaveable { mutableStateOf(false) }
     var showCastDialog by rememberSaveable { mutableStateOf(false) }
     var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+    var showProviderPicker by rememberSaveable { mutableStateOf(false) }
+    var switchingProviderName by remember { mutableStateOf<String?>(null) }
+    val (providerOrder, onProviderOrderChange) = rememberPreference(LyricsProviderOrderKey, defaultValue = "")
     var keepScreenOn by rememberPreference(KeepScreenOn, false)
+    val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val playerButtonsStyle by rememberEnumPreference(PlayerButtonsStyleKey, PlayerButtonsStyle.DEFAULT)
+    val sliderStyle by rememberEnumPreference(SliderStyleKey, SliderStyle.DEFAULT)
+    val squigglySlider by rememberPreference(SquigglySliderKey, defaultValue = false)
+    val hidePlayerThumbnail by rememberPreference(HidePlayerThumbnailKey, defaultValue = false)
+    val cropAlbumArt by rememberPreference(CropAlbumArtKey, defaultValue = false)
+    val swipeThumbnail by rememberPreference(SwipeThumbnailKey, defaultValue = true)
+    val layoutDirection = LocalLayoutDirection.current
 
     // Translation state (persisted across song changes & restarts until explicitly turned off)
     var showTranslation by rememberPreference(LyricsTranslationEnabledKey, false)
@@ -278,6 +316,26 @@ fun MornyeNowPlaying(
     // Return to Now Playing before collapsing the sheet when viewing Lyrics or Queue
     BackHandler(enabled = !isPlayerMode && !state.isClosingOrCollapsed) {
         mode = NowPlayingMode.PLAYER
+    }
+    // Close Audio Output, 3-dots menu, Provider Picker, or dialogs back to Now Playing before exiting
+    BackHandler(
+        enabled = !state.isClosingOrCollapsed && (
+            showProviderPicker ||
+                showSongOptionsMenu ||
+                showCastDialog ||
+                showLyricsOffsetDialog ||
+                showSleepTimerDialog ||
+                showChoosePlaylistDialog
+            ),
+    ) {
+        when {
+            showProviderPicker && switchingProviderName == null -> showProviderPicker = false
+            showSongOptionsMenu -> showSongOptionsMenu = false
+            showCastDialog -> showCastDialog = false
+            showLyricsOffsetDialog -> showLyricsOffsetDialog = false
+            showSleepTimerDialog -> showSleepTimerDialog = false
+            showChoosePlaylistDialog -> showChoosePlaylistDialog = false
+        }
     }
     val artworkPulse = remember { Animatable(0f) }
     var isScrubbing by remember { mutableStateOf(false) }
@@ -466,11 +524,19 @@ fun MornyeNowPlaying(
             return@LaunchedEffect
         }
         val songId = mediaMetadata?.id ?: return@LaunchedEffect
+        val cacheKey = "$songId:${lrcText?.hashCode() ?: 0}"
+        val cachedTranslation = translationCache.get(cacheKey)
+        if (cachedTranslation != null) {
+            translatedLines = cachedTranslation
+            showTranslationToastPending = false
+            return@LaunchedEffect
+        }
         isTranslating = true
         try {
             val linesToTranslate = parsedLyrics.map { it.text }
             val detectedLang = LyricsGoogleTranslator.detectLanguage(linesToTranslate)
             if (detectedLang == "id") {
+                translationCache.put(cacheKey, emptyList())
                 translatedLines = emptyList()
                 if (showTranslationToastPending) {
                     Toast.makeText(
@@ -487,6 +553,7 @@ fun MornyeNowPlaying(
                 lines = linesToTranslate,
             )
             if (result != null) {
+                translationCache.put(cacheKey, result)
                 translatedLines = result
             } else if (showTranslationToastPending) {
                 Toast.makeText(
@@ -582,92 +649,116 @@ fun MornyeNowPlaying(
                 .background(Color.Black),
         )
 
-        // ── Layer 2: Backdrop Blur (Pre-blurred 128px, 3-pass worker box blur, LruCache(8), 360ms crossfade) ──
-        val prevBmp = previousBlurredBitmap
-        val currBmp = currentBlurredBitmap
+        // ── Layer 2: Background according to PlayerBackgroundStyleKey ──
+        if (playerBackground == PlayerBackgroundStyle.BLUR) {
+            val prevBmp = previousBlurredBitmap
+            val currBmp = currentBlurredBitmap
 
-        if (prevBmp != null && !prevBmp.isRecycled) {
-            Image(
-                bitmap = prevBmp.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+            if (prevBmp != null && !prevBmp.isRecycled) {
+                Image(
+                    bitmap = prevBmp.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(1.05f)
+                        .graphicsLayer {
+                            val p = state.progress.coerceIn(0f, 1f)
+                            alpha = if (state.isClosingOrCollapsed) {
+                                smoothstep(0.45f, 0.96f, p)
+                            } else {
+                                smoothstep(0.06f, 0.78f, p)
+                            }
+                        },
+                )
+            }
+            if (currBmp != null && !currBmp.isRecycled) {
+                Image(
+                    bitmap = currBmp.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(1.05f)
+                        .graphicsLayer {
+                            val p = state.progress.coerceIn(0f, 1f)
+                            val bgFade = if (state.isClosingOrCollapsed) {
+                                smoothstep(0.45f, 0.96f, p)
+                            } else {
+                                smoothstep(0.05f, 0.85f, p)
+                            }
+                            alpha = bgFade * if (prevBmp != null) crossfadeAnim.value else 1f
+                        },
+                )
+            }
+            // Dark contrast overlay
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .scale(1.05f)
                     .graphicsLayer {
                         val p = state.progress.coerceIn(0f, 1f)
                         alpha = if (state.isClosingOrCollapsed) {
                             smoothstep(0.45f, 0.96f, p)
                         } else {
-                            smoothstep(0.06f, 0.78f, p)
+                            smoothstep(0.05f, 0.85f, p)
                         }
-                    },
+                    }
+                    .background(Color.Black.copy(alpha = 0.40f)),
             )
-        }
-        if (currBmp != null && !currBmp.isRecycled) {
-            Image(
-                bitmap = currBmp.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+        } else if (playerBackground == PlayerBackgroundStyle.GRADIENT) {
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .scale(1.05f)
                     .graphicsLayer {
                         val p = state.progress.coerceIn(0f, 1f)
-                        val bgFade = if (state.isClosingOrCollapsed) {
+                        alpha = if (state.isClosingOrCollapsed) {
                             smoothstep(0.45f, 0.96f, p)
                         } else {
                             smoothstep(0.05f, 0.85f, p)
                         }
-                        alpha = bgFade * if (prevBmp != null) crossfadeAnim.value else 1f
-                    },
+                    }
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to artworkAccent.copy(alpha = 0.85f),
+                            0.45f to artworkSecondary.copy(alpha = 0.70f),
+                            1.0f to Color.Black,
+                        ),
+                    ),
             )
         }
-        // Dark contrast overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    val p = state.progress.coerceIn(0f, 1f)
-                    alpha = if (state.isClosingOrCollapsed) {
-                        smoothstep(0.45f, 0.96f, p)
-                    } else {
-                        smoothstep(0.05f, 0.85f, p)
-                    }
-                }
-                .background(Color.Black.copy(alpha = 0.40f)),
-        )
 
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    val p = state.progress.coerceIn(0f, 1f)
-                    alpha = if (state.isClosingOrCollapsed) {
-                        smoothstep(0.45f, 0.96f, p)
-                    } else {
-                        smoothstep(0.05f, 0.85f, p)
-                    }
-                },
-        ) {
-            val phase = artworkPulse.value
-            val center = Offset(
-                x = size.width * (0.25f + phase * 0.5f),
-                y = size.height * (0.27f + sin(phase * Math.PI.toFloat()) * 0.035f),
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        artworkAccent.copy(alpha = 0.32f),
-                        artworkSecondary.copy(alpha = 0.12f),
-                        Color.Transparent,
+        if (playerBackground != PlayerBackgroundStyle.DEFAULT) {
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val p = state.progress.coerceIn(0f, 1f)
+                        alpha = if (state.isClosingOrCollapsed) {
+                            smoothstep(0.45f, 0.96f, p)
+                        } else {
+                            smoothstep(0.05f, 0.85f, p)
+                        }
+                    },
+            ) {
+                val phase = artworkPulse.value
+                val center = Offset(
+                    x = size.width * (0.25f + phase * 0.5f),
+                    y = size.height * (0.27f + sin(phase * Math.PI.toFloat()) * 0.035f),
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            artworkAccent.copy(alpha = 0.32f),
+                            artworkSecondary.copy(alpha = 0.12f),
+                            Color.Transparent,
+                        ),
+                        center = center,
+                        radius = size.minDimension * 0.56f,
                     ),
-                    center = center,
                     radius = size.minDimension * 0.56f,
-                ),
-                radius = size.minDimension * 0.56f,
-                center = center,
-            )
+                    center = center,
+                )
+            }
         }
 
         // ── Layer 3: Hero Banner (morphs smoothly between 40.dp Mini Player thumbnail and full-bleed hero) ──
@@ -747,12 +838,37 @@ fun MornyeNowPlaying(
                         }
                     },
             ) {
+            if (!hidePlayerThumbnail) {
+                var coverSwipeAccum by remember { mutableFloatStateOf(0f) }
                 AsyncImage(
                     model = coverImageRequest,
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .let { base ->
+                            if (swipeThumbnail && isPlayerMode) {
+                                base.pointerInput(layoutDirection, playerConnection) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { coverSwipeAccum = 0f },
+                                        onDragEnd = {
+                                            val threshold = 110f
+                                            val directed = if (layoutDirection == LayoutDirection.Rtl) -coverSwipeAccum else coverSwipeAccum
+                                            if (directed < -threshold) {
+                                                playerConnection.player.seekToNext()
+                                            } else if (directed > threshold) {
+                                                playerConnection.player.seekToPrevious()
+                                            }
+                                            coverSwipeAccum = 0f
+                                        },
+                                        onDragCancel = { coverSwipeAccum = 0f },
+                                        onHorizontalDrag = { _, dragAmount -> coverSwipeAccum += dragAmount },
+                                    )
+                                }
+                            } else base
+                        },
                 )
+            }
                 if (showMotionVideo) {
                     motionArtworkUrl?.let { url ->
                         MotionArtworkPlayer(
@@ -1145,7 +1261,12 @@ fun MornyeNowPlaying(
                     onNext = { playerConnection.player.seekToNext() },
                     onPrev = { playerConnection.player.seekToPrevious() },
                     mode = mode,
+                    sliderStyle = sliderStyle,
+                    squigglySlider = squigglySlider,
+                    playerButtonsStyle = playerButtonsStyle,
                     showTranslationLabel = showTranslation,
+                    currentProvider = currentLyrics?.takeIf { it.id == mediaMetadata?.id }?.provider?.takeIf { it.isNotBlank() },
+                    onProviderClick = { showProviderPicker = true },
                     onLyricsClick = {
                         mode = if (mode == NowPlayingMode.LYRICS) NowPlayingMode.PLAYER else NowPlayingMode.LYRICS
                     },
@@ -1305,6 +1426,81 @@ fun MornyeNowPlaying(
                             clipboard.setPrimaryClip(ClipData.newPlainText("Song Log", log))
                             Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
                         }
+                    }
+                },
+            )
+        }
+
+        if (mediaMetadata != null) {
+            LyricsProviderPickerOverlay(
+                visible = showProviderPicker,
+                currentProvider = currentLyrics?.takeIf { it.id == mediaMetadata?.id }?.provider?.takeIf { it.isNotBlank() },
+                preferredProvider = LyricsProviderRegistry.deserializeProviderOrder(providerOrder).firstOrNull(),
+                switchingProviderName = switchingProviderName,
+                onSelectProvider = { pickedName ->
+                    val meta = mediaMetadata ?: return@LyricsProviderPickerOverlay
+                    val currentOrder = LyricsProviderRegistry.deserializeProviderOrder(providerOrder)
+                    val newOrder = listOf(pickedName) + currentOrder.filter { it != pickedName }
+                    onProviderOrderChange(LyricsProviderRegistry.serializeProviderOrder(newOrder))
+                    switchingProviderName = pickedName
+                    coroutineScope.launch(Dispatchers.IO) {
+                        var loadedLyrics: String? = null
+                        var loadedProvider: String? = null
+                        try {
+                            val cleanedTitle = LyricsUtils.cleanTitleForSearch(meta.title)
+                            val artistNames = meta.artists.joinToString { it.name }
+                            val candidates = newOrder.mapNotNull { LyricsProviderRegistry.getProviderByName(it) }
+                            for (provider in candidates) {
+                                val res = try {
+                                    withTimeoutOrNull(8000L) {
+                                        provider.getLyrics(
+                                            context,
+                                            meta.id,
+                                            cleanedTitle,
+                                            artistNames,
+                                            meta.duration,
+                                            meta.album?.title,
+                                        )
+                                    }
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                val text = res?.getOrNull()?.takeIf { it.isNotBlank() }
+                                if (text != null) {
+                                    loadedLyrics = LyricsUtils.filterLyricsCreditLines(text)
+                                    loadedProvider = provider.name
+                                    break
+                                }
+                            }
+                            if (loadedLyrics != null && loadedProvider != null) {
+                                database.query {
+                                    upsert(LyricsEntity(meta.id, loadedLyrics, loadedProvider))
+                                }
+                                withContext(Dispatchers.Main) {
+                                    translatedLines = null
+                                    val msg = if (loadedProvider == pickedName) {
+                                        "Lirik dimuat dari ${lyricsProviderDisplayName(loadedProvider)}"
+                                    } else {
+                                        "${lyricsProviderDisplayName(pickedName)} tidak tersedia, otomatis beralih ke ${lyricsProviderDisplayName(loadedProvider)}"
+                                    }
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "Lirik tidak ditemukan di semua penyedia", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } finally {
+                            withContext(Dispatchers.Main) {
+                                switchingProviderName = null
+                                showProviderPicker = false
+                            }
+                        }
+                    }
+                },
+                onDismiss = {
+                    if (switchingProviderName == null) {
+                        showProviderPicker = false
                     }
                 },
             )
@@ -1498,7 +1694,12 @@ private fun BottomControls(
     onNext: () -> Unit,
     onPrev: () -> Unit,
     mode: NowPlayingMode,
+    sliderStyle: SliderStyle = SliderStyle.DEFAULT,
+    squigglySlider: Boolean = false,
+    playerButtonsStyle: PlayerButtonsStyle = PlayerButtonsStyle.DEFAULT,
     showTranslationLabel: Boolean = false,
+    currentProvider: String? = null,
+    onProviderClick: () -> Unit = {},
     onLyricsClick: () -> Unit,
     onCastClick: () -> Unit,
     onQueueClick: () -> Unit,
@@ -1580,47 +1781,125 @@ private fun BottomControls(
             .padding(horizontal = 24.dp)
             .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom)),
     ) {
-        // "Diterjemahkan ke Indonesia" label — visible only when translation is active
+        // "Diterjemahkan ke Indonesia" (or lyrics provider label in Lyrics mode) — underlined & clickable to pick lyrics provider
+        val showProviderHint = showTranslationLabel || mode == NowPlayingMode.LYRICS
         androidx.compose.animation.AnimatedVisibility(
-            visible = showTranslationLabel,
+            visible = showProviderHint,
             enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)),
             exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
         ) {
+            val labelText = if (showTranslationLabel) {
+                val base = androidx.compose.ui.res.stringResource(R.string.lyrics_translated_to_id)
+                if (currentProvider != null) "$base · ${lyricsProviderDisplayName(currentProvider)}" else base
+            } else {
+                "Penyedia lirik: ${currentProvider?.let(::lyricsProviderDisplayName) ?: "Otomatis"}"
+            }
             Text(
-                text = androidx.compose.ui.res.stringResource(R.string.lyrics_translated_to_id),
-                color = Color.White.copy(alpha = 0.55f),
+                text = labelText,
+                color = Color.White.copy(alpha = 0.72f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 4.dp),
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(enabled = controlsEnabled, onClick = onProviderClick)
+                    .padding(vertical = 2.dp, horizontal = 2.dp),
             )
         }
 
-        Slider(
-            state = sliderState,
-            enabled = controlsEnabled,
-            onValueChange = {
-                dragging = true
-                onScrubbingChanged(true)
-                dragPosition = it
-            },
-            onValueChangeFinished = {
-                dragging = false
-                onScrubbingChanged(false)
-                onSeek(dragPosition.toLong())
-            },
-            thumb = { Spacer(modifier = Modifier.size(0.dp)) },
-            track = { state ->
-                PlayerSliderTrack(
-                    sliderState = state,
-                    trackHeight = 5.dp,
-                    colors = SliderDefaults.colors(
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.25f),
-                    ),
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
+        val sliderColors = SliderDefaults.colors(
+            thumbColor = Color.White,
+            activeTrackColor = Color.White,
+            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
         )
+        when (sliderStyle) {
+            SliderStyle.DEFAULT -> {
+                Slider(
+                    value = currentSliderVal.coerceIn(sliderRange),
+                    valueRange = sliderRange,
+                    enabled = controlsEnabled,
+                    onValueChange = {
+                        dragging = true
+                        onScrubbingChanged(true)
+                        dragPosition = it
+                    },
+                    onValueChangeFinished = {
+                        dragging = false
+                        onScrubbingChanged(false)
+                        onSeek(dragPosition.toLong())
+                    },
+                    colors = sliderColors,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            SliderStyle.WAVY -> {
+                if (squigglySlider) {
+                    SquigglySlider(
+                        value = currentSliderVal.coerceIn(sliderRange),
+                        valueRange = sliderRange,
+                        enabled = controlsEnabled,
+                        onValueChange = {
+                            dragging = true
+                            onScrubbingChanged(true)
+                            dragPosition = it
+                        },
+                        onValueChangeFinished = {
+                            dragging = false
+                            onScrubbingChanged(false)
+                            onSeek(dragPosition.toLong())
+                        },
+                        colors = sliderColors,
+                        isPlaying = isPlaying,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    WavySlider(
+                        value = currentSliderVal.coerceIn(sliderRange),
+                        valueRange = sliderRange,
+                        enabled = controlsEnabled,
+                        onValueChange = {
+                            dragging = true
+                            onScrubbingChanged(true)
+                            dragPosition = it
+                        },
+                        onValueChangeFinished = {
+                            dragging = false
+                            onScrubbingChanged(false)
+                            onSeek(dragPosition.toLong())
+                        },
+                        colors = sliderColors,
+                        isPlaying = isPlaying,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            SliderStyle.SLIM -> {
+                Slider(
+                    state = sliderState,
+                    enabled = controlsEnabled,
+                    onValueChange = {
+                        dragging = true
+                        onScrubbingChanged(true)
+                        dragPosition = it
+                    },
+                    onValueChangeFinished = {
+                        dragging = false
+                        onScrubbingChanged(false)
+                        onSeek(dragPosition.toLong())
+                    },
+                    thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                    track = { state ->
+                        PlayerSliderTrack(
+                            sliderState = state,
+                            trackHeight = 5.dp,
+                            colors = sliderColors,
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
@@ -1636,6 +1915,11 @@ private fun BottomControls(
         Spacer(modifier = Modifier.height(4.dp))
 
         // Playback controls (Apple Music iOS bold solid icons, no circle background, as in screenshot)
+        val controlTint = when (playerButtonsStyle) {
+            PlayerButtonsStyle.DEFAULT -> Color.White
+            PlayerButtonsStyle.PRIMARY -> MaterialTheme.colorScheme.primary
+            PlayerButtonsStyle.TERTIARY -> MaterialTheme.colorScheme.tertiary
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1658,7 +1942,7 @@ private fun BottomControls(
                 Icon(
                     painter = painterResource(R.drawable.ic_apple_backward),
                     contentDescription = "Previous",
-                    tint = Color.White,
+                    tint = controlTint,
                     modifier = Modifier.size(38.dp),
                 )
             }
@@ -1678,7 +1962,7 @@ private fun BottomControls(
                 Icon(
                     painter = painterResource(if (isPlaying) R.drawable.ic_apple_pause else R.drawable.ic_apple_play),
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
+                    tint = controlTint,
                     modifier = Modifier.size(52.dp),
                 )
             }
@@ -1698,7 +1982,7 @@ private fun BottomControls(
                 Icon(
                     painter = painterResource(R.drawable.ic_apple_forward),
                     contentDescription = "Next",
-                    tint = Color.White,
+                    tint = controlTint,
                     modifier = Modifier.size(38.dp),
                 )
             }
@@ -1874,6 +2158,152 @@ private fun BottomControls(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
             )
+        }
+    }
+}
+
+private fun lyricsProviderDisplayName(name: String): String = when (name) {
+    "LrcLib" -> "LRCLIB"
+    "Paxsenix" -> "PaxSenix"
+    "LyricsPlus" -> "LyricsPlus / BiniLyrics"
+    "YouTubeSubtitle" -> "YouTube Subtitle"
+    else -> name
+}
+
+@Composable
+private fun LyricsProviderPickerOverlay(
+    visible: Boolean,
+    currentProvider: String?,
+    preferredProvider: String?,
+    switchingProviderName: String?,
+    onSelectProvider: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(180)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.58f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = visible,
+                enter = scaleIn(
+                    initialScale = 0.90f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = 0.82f,
+                        stiffness = 420f,
+                    ),
+                ) + androidx.compose.animation.slideInVertically(
+                    initialOffsetY = { it / 10 },
+                    animationSpec = androidx.compose.animation.core.tween(220),
+                ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)),
+                exit = scaleOut(targetScale = 0.94f) +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth(0.88f)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xF016161C))
+                        .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        )
+                        .padding(horizontal = 18.dp, vertical = 18.dp),
+                ) {
+                    Text(
+                        text = "Penyedia Lirik",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Pilih penyedia utama. Jika gagal atau kosong, otomatis beralih ke penyedia lain.",
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val providers = remember { LyricsProviderRegistry.getDefaultProviderOrder() }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        providers.forEach { providerName ->
+                            val isActive = currentProvider.equals(providerName, ignoreCase = true)
+                            val isPreferred = preferredProvider.equals(providerName, ignoreCase = true)
+                            val isLoading = switchingProviderName == providerName
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        when {
+                                            isActive -> Color.White.copy(alpha = 0.16f)
+                                            isPreferred -> Color.White.copy(alpha = 0.08f)
+                                            else -> Color.White.copy(alpha = 0.04f)
+                                        },
+                                    )
+                                    .clickable(enabled = switchingProviderName == null) {
+                                        onSelectProvider(providerName)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = lyricsProviderDisplayName(providerName),
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isActive || isPreferred) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                                when {
+                                    isLoading -> {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                    isActive -> {
+                                        Text(
+                                            text = "Aktif",
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                    isPreferred -> {
+                                        Text(
+                                            text = "Utama",
+                                            color = Color.White.copy(alpha = 0.65f),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

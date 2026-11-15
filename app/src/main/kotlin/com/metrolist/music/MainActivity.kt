@@ -103,6 +103,9 @@ import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.songfy.ui.icons.SongfyIcons
+import com.songfy.ui.LocalSongfyBackdrop
+import com.songfy.ui.backdrop.backdrops.layerBackdrop
+import com.songfy.ui.backdrop.backdrops.rememberLayerBackdrop
 import com.songfy.ui.songfyLiquidGlass
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -917,6 +920,10 @@ class MainActivity : FragmentActivity() {
                     }
 
                 val baseBg = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+                val appBackdrop = rememberLayerBackdrop {
+                    drawRect(baseBg)
+                    drawContent()
+                }
                 val artistNameAliases by ArtistNameAliases.aliases.collectAsStateWithLifecycle()
 
                 CompositionLocalProvider(
@@ -926,6 +933,7 @@ class MainActivity : FragmentActivity() {
                     LocalPlayerConnection provides playerConnection,
                     LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
                     LocalLiquidNavState provides liquidNavState,
+                    LocalSongfyBackdrop provides appBackdrop,
                     LocalDownloadUtil provides downloadUtil,
                     LocalShimmerTheme provides ShimmerTheme,
                     LocalSyncUtils provides syncUtils,
@@ -1145,7 +1153,7 @@ class MainActivity : FragmentActivity() {
                                 .fillMaxSize()
                                 .nestedScroll(liquidNavState.nestedScrollConnection),
                     ) {
-                        Row(Modifier.fillMaxSize()) {
+                        Row(Modifier.fillMaxSize().layerBackdrop(appBackdrop)) {
                             val onRailItemClick: (Screens, Boolean) -> Unit =
                                 remember(navController, coroutineScope, topAppBarScrollBehavior, playerBottomSheetState) {
                                     { screen: Screens, isSelected: Boolean ->

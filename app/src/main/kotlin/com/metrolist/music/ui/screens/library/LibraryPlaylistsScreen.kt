@@ -75,6 +75,7 @@ import com.metrolist.music.constants.YtmSyncKey
 import com.metrolist.music.db.entities.Playlist
 import com.metrolist.music.db.entities.PlaylistEntity
 import com.metrolist.music.ui.component.CreatePlaylistDialog
+import com.metrolist.music.ui.component.SpotifyImportDialog
 import com.metrolist.music.ui.component.LibrarySearchEmptyPlaceholder
 import com.metrolist.music.ui.component.LibrarySearchHeader
 import com.metrolist.music.ui.component.LibraryPlaylistGridItem
@@ -267,6 +268,21 @@ fun LibraryPlaylistsScreen(
                     ),
                 )
             }
+            add(
+                VisiblePlaylistItem(
+                    key = "spotify_import",
+                    playlist = Playlist(
+                        playlist = PlaylistEntity(
+                            id = "spotify_import",
+                            name = "Impor dari Spotify",
+                        ),
+                        songCount = 0,
+                        songThumbnails = emptyList(),
+                    ),
+                    autoPlaylist = true,
+                    route = "spotify_import",
+                ),
+            )
 
             filteredPlaylists
                 .distinctBy { it.id }
@@ -315,6 +331,18 @@ fun LibraryPlaylistsScreen(
     }
 
     var showCreatePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+
+    var showSpotifyImportDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (showSpotifyImportDialog) {
+        SpotifyImportDialog(
+            onDismiss = { showSpotifyImportDialog = false },
+            onImported = { playlistId ->
+                showSpotifyImportDialog = false
+                navController.navigate("local_playlist/$playlistId")
+            },
+        )
+    }
 
     if (showCreatePlaylistDialog) {
         CreatePlaylistDialog(
@@ -452,7 +480,11 @@ fun LibraryPlaylistsScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .clickable {
+                                        if (item.route == "spotify_import") {
+                                            showSpotifyImportDialog = true
+                                        } else {
                                             item.route?.let(navController::navigate)
+                                        }
                                         }
                                         .animateItem(),
                             )
@@ -522,7 +554,11 @@ fun LibraryPlaylistsScreen(
                                         .fillMaxWidth()
                                         .combinedClickable(
                                             onClick = {
-                                                item.route?.let(navController::navigate)
+                                            if (item.route == "spotify_import") {
+                                            showSpotifyImportDialog = true
+                                        } else {
+                                            item.route?.let(navController::navigate)
+                                        }
                                             },
                                         )
                                         .animateItem(),

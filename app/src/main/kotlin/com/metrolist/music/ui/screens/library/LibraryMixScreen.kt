@@ -90,6 +90,7 @@ import com.metrolist.music.ui.component.AlbumListItem
 import com.metrolist.music.ui.component.ArtistGridItem
 import com.metrolist.music.ui.component.ArtistListItem
 import com.metrolist.music.ui.component.CreatePlaylistDialog
+import com.metrolist.music.ui.component.SpotifyImportDialog
 import com.metrolist.music.ui.component.LibrarySearchEmptyPlaceholder
 import com.metrolist.music.ui.component.LibrarySearchHeader
 import com.metrolist.music.ui.component.LocalMenuState
@@ -142,7 +143,18 @@ fun LibraryMixScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val debouncedSearchQuery by viewModel.debouncedSearchQuery.collectAsStateWithLifecycle()
     var showCreatePlaylistDialog by rememberSaveable { mutableStateOf(false) }
-    
+    var showSpotifyImportDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (showSpotifyImportDialog) {
+        SpotifyImportDialog(
+            onDismiss = { showSpotifyImportDialog = false },
+            onImported = { playlistId ->
+                showSpotifyImportDialog = false
+                navController.navigate("local_playlist/$playlistId")
+            },
+        )
+    }
+
     if (showCreatePlaylistDialog) {
         CreatePlaylistDialog(
             onDismiss = { showCreatePlaylistDialog = false },
@@ -561,6 +573,29 @@ fun LibraryMixScreen(
                         }
                     }
 
+                    item(
+                        key = "spotifyImportFolder",
+                        contentType = { CONTENT_TYPE_PLAYLIST },
+                    ) {
+                        PlaylistListItem(
+                            playlist = Playlist(
+                                playlist = PlaylistEntity(
+                                    id = "spotify_import",
+                                    name = "Impor dari Spotify",
+                                ),
+                                songCount = 0,
+                                songThumbnails = emptyList(),
+                            ),
+                            autoPlaylist = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showSpotifyImportDialog = true
+                                    }.animateItem(),
+                        )
+                    }
+
                     items(
                         items = filteredItems,
                         key = { it.id },
@@ -900,6 +935,30 @@ fun LibraryMixScreen(
                                         }.animateItem(),
                             )
                         }
+                    }
+
+                    item(
+                        key = "spotifyImportFolder",
+                        contentType = { CONTENT_TYPE_PLAYLIST },
+                    ) {
+                        PlaylistGridItem(
+                            playlist = Playlist(
+                                playlist = PlaylistEntity(
+                                    id = "spotify_import",
+                                    name = "Impor dari Spotify",
+                                ),
+                                songCount = 0,
+                                songThumbnails = emptyList(),
+                            ),
+                            fillMaxWidth = true,
+                            autoPlaylist = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showSpotifyImportDialog = true
+                                    }.animateItem(),
+                        )
                     }
 
                     items(
