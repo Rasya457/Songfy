@@ -191,6 +191,7 @@ import com.metrolist.music.ui.component.LyricsOffsetDialog
 import com.metrolist.music.ui.component.PlayerSheetMotion
 import com.metrolist.music.ui.component.PlayerSleepTimerDialog
 import com.metrolist.music.ui.component.PlayerSliderTrack
+import com.metrolist.music.ui.component.ShareLyricsSheet
 import com.metrolist.music.ui.component.SongOptionsMenu
 import com.metrolist.music.ui.component.SyncedLyricsView
 import com.metrolist.music.ui.menu.AddToPlaylistDialog
@@ -203,6 +204,7 @@ import com.songfy.ui.icons.rememberSongfyAudioOutputState
 import com.songfy.ui.lyrics.SongfySlidingPlayerDeck
 import com.songfy.ui.lyrics.rememberSongfyLyricsAutoHide
 import com.songfy.ui.lyrics.songfyTapToRevealControls
+import com.songfy.ui.songfyLiquidGlass
 import com.songfy.ui.lyrics.songfyTrackLyricsDeckInteractions
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
@@ -293,6 +295,9 @@ fun MornyeNowPlaying(
     var showChoosePlaylistDialog by rememberSaveable { mutableStateOf(false) }
     var showProviderPicker by rememberSaveable { mutableStateOf(false) }
     var switchingProviderName by remember { mutableStateOf<String?>(null) }
+    var isSelectingLyricsForShare by remember { mutableStateOf(false) }
+    var selectedLyricIndices by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var showShareLyricsSheet by remember { mutableStateOf(false) }
     val (providerOrder, onProviderOrderChange) = rememberPreference(LyricsProviderOrderKey, defaultValue = "")
     var keepScreenOn by rememberPreference(KeepScreenOn, false)
     val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
@@ -313,9 +318,28 @@ fun MornyeNowPlaying(
     var mode by remember { mutableStateOf(NowPlayingMode.PLAYER) }
     val isPlayerMode = mode == NowPlayingMode.PLAYER
 
+    LaunchedEffect(mode, mediaMetadata?.id) {
+        if (mode != NowPlayingMode.LYRICS) {
+            isSelectingLyricsForShare = false
+            selectedLyricIndices = emptySet()
+        }
+    }
+    LaunchedEffect(mediaMetadata?.id) {
+        isSelectingLyricsForShare = false
+        selectedLyricIndices = emptySet()
+        showShareLyricsSheet = false
+    }
+
     // Return to Now Playing before collapsing the sheet when viewing Lyrics or Queue
     BackHandler(enabled = !isPlayerMode && !state.isClosingOrCollapsed) {
-        mode = NowPlayingMode.PLAYER
+        if (showShareLyricsSheet) {
+            showShareLyricsSheet = false
+        } else if (isSelectingLyricsForShare) {
+            isSelectingLyricsForShare = false
+            selectedLyricIndices = emptySet()
+        } else {
+            mode = NowPlayingMode.PLAYER
+        }
     }
     // Close Audio Output, 3-dots menu, Provider Picker, or dialogs back to Now Playing before exiting
     BackHandler(
@@ -341,7 +365,7 @@ fun MornyeNowPlaying(
     var isScrubbing by remember { mutableStateOf(false) }
     var isVolumeDragging by remember { mutableStateOf(false) }
     val lyricsAutoHide = rememberSongfyLyricsAutoHide(
-        isLyricsOpen = mode == NowPlayingMode.LYRICS,
+        isLyricsOpen = mode == NowPlayingMode.LYRICS && !isSelectingLyricsForShare,
         isInteracting = isScrubbing || isVolumeDragging,
     )
     val isMotionArtworkActive by remember(state) {
@@ -1022,29 +1046,55 @@ fun MornyeNowPlaying(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            IconButton(
-                                onClick = { playerConnection.toggleLike() },
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    painter = painterResource(
-                                        if (isFavorite) R.drawable.favorite else R.drawable.favorite_border,
-                                    ),
-                                    contentDescription = if (isFavorite) "Unlike" else "Like",
-                                    tint = if (isFavorite) Color(0xFFFF3B5C) else Color.White,
-                                    modifier = Modifier.size(21.dp),
-                                )
-                            }
-                            IconButton(
-                                onClick = onMoreClick,
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = SongfyIcons.Ellipsis,
-                                    contentDescription = "More",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp),
-                                )
+                            val showLyricsShareHeader = mode == NowPlayingMode.LYRICS &&
+                                (!lyricsAutoHide.controlsOpen || isSelectingLyricsForShare)
+                            if (showLyricsShareHeader) {
+                                IconButton(
+                                    onClick = {
+                                        if (isSelectingLyricsForShare) {
+                                            isSelectingLyricsForShare = false
+                                            selectedLyricIndices = emptySet()
+                                        } else {
+                                            selectedLyricIndices = emptySet()
+                                            isSelectingLyricsForShare = true
+                                        }
+                                    },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        painter = painterResource(
+                                            if (isSelectingLyricsForShare) R.drawable.close else R.drawable.share,
+                                        ),
+                                        contentDescription = if (isSelectingLyricsForShare) "Batal" else "Share lyrics",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { playerConnection.toggleLike() },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        painter = painterResource(
+                                            if (isFavorite) R.drawable.favorite else R.drawable.favorite_border,
+                                        ),
+                                        contentDescription = if (isFavorite) "Unlike" else "Like",
+                                        tint = if (isFavorite) Color(0xFFFF3B5C) else Color.White,
+                                        modifier = Modifier.size(21.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onMoreClick,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = SongfyIcons.Ellipsis,
+                                        contentDescription = "More",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
                             }
                         }
 
@@ -1064,17 +1114,31 @@ fun MornyeNowPlaying(
                                         .fillMaxSize()
                                         .nestedScroll(state.preUpPostDownNestedScrollConnection)
                                         .songfyTapToRevealControls(
-                                            enabled = !lyricsAutoHide.controlsOpen,
+                                            enabled = !lyricsAutoHide.controlsOpen && !isSelectingLyricsForShare,
                                             onReveal = lyricsAutoHide::reveal,
                                         ),
                                     translations = translatedLines,
                                     showTranslation = showTranslation,
                                     isTranslating = isTranslating,
-                                    bottomContentPadding = 24.dp,
-                                    onUserInteraction = {
-                                        if (lyricsAutoHide.controlsOpen) lyricsAutoHide.userInteracted()
+                                    bottomContentPadding = if (isSelectingLyricsForShare) 88.dp else 24.dp,
+                                    isSelectionMode = isSelectingLyricsForShare,
+                                    selectedIndices = selectedLyricIndices,
+                                    onToggleLineSelection = { idx ->
+                                        selectedLyricIndices = if (idx in selectedLyricIndices) {
+                                            selectedLyricIndices - idx
+                                        } else if (selectedLyricIndices.size < 7) {
+                                            selectedLyricIndices + idx
+                                        } else {
+                                            Toast.makeText(context, "Maksimal 7 baris lirik", Toast.LENGTH_SHORT).show()
+                                            selectedLyricIndices
+                                        }
                                     },
-                                    onScrollUp = lyricsAutoHide::reveal,
+                                    onUserInteraction = {
+                                        if (!isSelectingLyricsForShare && lyricsAutoHide.controlsOpen) lyricsAutoHide.userInteracted()
+                                    },
+                                    onScrollUp = {
+                                        if (!isSelectingLyricsForShare) lyricsAutoHide.reveal()
+                                    },
                                     onTranslateClick = {
                                         if (isTranslating) return@SyncedLyricsView
                                         if (lyricsAutoHide.controlsOpen) lyricsAutoHide.userInteracted()
@@ -1088,6 +1152,88 @@ fun MornyeNowPlaying(
                                         }
                                     },
                                 )
+
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isSelectingLyricsForShare,
+                                    enter = androidx.compose.animation.fadeIn(tween(180)) +
+                                        androidx.compose.animation.slideInVertically { it / 2 },
+                                    exit = androidx.compose.animation.fadeOut(tween(140)) +
+                                        androidx.compose.animation.slideOutVertically { it / 2 },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(horizontal = 24.dp, vertical = 14.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .songfyLiquidGlass(
+                                                dark = true,
+                                                shadowElevation = 18.dp,
+                                                shape = RoundedCornerShape(24.dp),
+                                            )
+                                            .padding(8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(Color.White.copy(alpha = 0.12f))
+                                                .clickable {
+                                                    isSelectingLyricsForShare = false
+                                                    selectedLyricIndices = emptySet()
+                                                }
+                                                .padding(vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.close),
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Batal",
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                        }
+
+                                        val canShare = selectedLyricIndices.isNotEmpty()
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(
+                                                    if (canShare) Color.White else Color.White.copy(alpha = 0.25f),
+                                                )
+                                                .clickable(enabled = canShare) {
+                                                    showShareLyricsSheet = true
+                                                }
+                                                .padding(vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.share),
+                                                contentDescription = null,
+                                                tint = if (canShare) Color.Black else Color.White.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Bagikan",
+                                                color = if (canShare) Color.Black else Color.White.copy(alpha = 0.5f),
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        }
+                                    }
+                                }
                             } else if (mode == NowPlayingMode.QUEUE) {
                                 QueueContent(
                                     playerConnection = playerConnection,
@@ -1429,6 +1575,25 @@ fun MornyeNowPlaying(
                     }
                 },
             )
+        }
+
+        if (showShareLyricsSheet && selectedLyricIndices.isNotEmpty()) {
+            val pickedLines = selectedLyricIndices
+                .sorted()
+                .mapNotNull { idx -> parsedLyrics.getOrNull(idx)?.text }
+            if (pickedLines.isNotEmpty()) {
+                ShareLyricsSheet(
+                    selectedLines = pickedLines,
+                    songTitle = title,
+                    artistName = artist,
+                    coverUrl = mediaMetadata?.thumbnailUrl,
+                    accentColor = artworkAccent,
+                    secondaryColor = artworkSecondary,
+                    onDismiss = {
+                        showShareLyricsSheet = false
+                    },
+                )
+            }
         }
 
         if (mediaMetadata != null) {

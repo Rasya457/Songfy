@@ -60,7 +60,7 @@ internal fun <T> upcomingQueueItems(
     currentIndex: Int,
 ): List<T> = if (currentIndex in queue.indices) queue.drop(currentIndex + 1) else emptyList()
 
-private const val ACTIVE_PLAYBACK_SYNC_TOLERANCE_MS = 2_000L
+private const val ACTIVE_PLAYBACK_SYNC_TOLERANCE_MS = 300L
 
 internal fun shouldSeekDuringActivePlayback(
     positionDifferenceMs: Long,
@@ -81,10 +81,10 @@ class ListenTogetherManager
         companion object {
             private const val TAG = "ListenTogetherManager"
 
-            private const val SOFT_SYNC_THRESHOLD_MS = 50L
-            private const val HARD_SYNC_THRESHOLD_MS = 750L
-            private const val DRIFT_CORRECTION_SPEED = 0.02f
-            private const val DRIFT_CHECK_INTERVAL_MS = 250L
+            private const val SOFT_SYNC_THRESHOLD_MS = 15L
+            private const val HARD_SYNC_THRESHOLD_MS = 300L
+            private const val DRIFT_CORRECTION_SPEED = 0.05f
+            private const val DRIFT_CHECK_INTERVAL_MS = 100L
         }
 
         private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -1090,11 +1090,13 @@ class ListenTogetherManager
                         val posDiff = kotlin.math.abs(player.currentPosition - adjustedPos)
                         val alreadyPlaying = player.playWhenReady
                         if (alreadyPlaying) {
-                            // PLAY is also the host heartbeat, so ordinary drift must not interrupt playback.
+                            // PLAY is also the host heartbeat: hard-seek large drift (>500ms) and smoothly correct smaller drift (>50ms)
                             if (shouldSeekDuringActivePlayback(posDiff, player.playbackState == Player.STATE_READY)) {
                                 cancelDriftCorrection()
                                 Timber.tag(TAG).d("Guest: hard sync ${player.currentPosition} -> $adjustedPos (diff ${posDiff}ms)")
                                 connection.seekTo(adjustedPos)
+                            } else if (posDiff > SOFT_SYNC_THRESHOLD_MS) {
+                                startDriftCorrection(connection, playTarget, basePos, actionServerTime)
                             }
                         } else {
                             cancelDriftCorrection()
@@ -1102,6 +1104,7 @@ class ListenTogetherManager
                                 connection.seekTo(adjustedPos)
                             }
                             connection.play()
+                            startDriftCorrection(connection, playTarget, basePos, actionServerTime)
                         }
                         lastSyncActionTime = now
                     }
@@ -1153,14 +1156,13 @@ class ListenTogetherManager
                         }
 
                         val posDiff = kotlin.math.abs(player.currentPosition - pos)
-                        if (player.playWhenReady) {
-                            Timber.tag(TAG).d("Guest: Pausing playback")
-                            connection.pause()
-                        }
-
                         if (posDiff > SOFT_SYNC_THRESHOLD_MS) {
                             Timber.tag(TAG).d("Guest: PAUSE seeking ${player.currentPosition} -> $pos (diff ${posDiff}ms)")
                             connection.seekTo(pos)
+                        }
+                        if (player.playWhenReady) {
+                            Timber.tag(TAG).d("Guest: Pausing playback")
+                            connection.pause()
                         }
                         lastSyncActionTime = now
                     }

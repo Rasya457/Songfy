@@ -63,6 +63,15 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.metrolist.music.ui.component.SoftwareUpdateDialog
+import com.metrolist.music.utils.AppReleaseInfo
+import com.metrolist.music.utils.AppUpdater
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -198,9 +207,19 @@ fun AboutScreen(
     navController: NavController,
 ) {
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val playerConnection = LocalPlayerConnection.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var availableUpdate by remember { mutableStateOf<AppReleaseInfo?>(null) }
+
+    availableUpdate?.let { release ->
+        SoftwareUpdateDialog(
+            release = release,
+            onDismiss = { availableUpdate = null },
+        )
+    }
     val wannaPlayStr = stringResource(R.string.wanna_play_favorite_song)
     val yeahStr = stringResource(R.string.yeah)
 
@@ -226,7 +245,7 @@ fun AboutScreen(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_launcher_foreground),
-                    contentDescription = stringResource(R.string.metrolist),
+                    contentDescription = stringResource(R.string.app_name),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(64.dp)
@@ -237,12 +256,12 @@ fun AboutScreen(
                 Spacer(Modifier.width(20.dp))
 
                 Column {
-                    val metrolistName = stringResource(R.string.metrolist)
+                    val appName = stringResource(R.string.app_name)
                         .lowercase(Locale.getDefault())
                         .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
                     Text(
-                        text = metrolistName,
+                        text = appName,
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -294,6 +313,36 @@ fun AboutScreen(
                                 )
                             }
                         }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    FilledTonalButton(
+                        enabled = !checkingUpdate,
+                        onClick = {
+                            checkingUpdate = true
+                            coroutineScope.launch {
+                                val release = AppUpdater.fetchLatestRelease()
+                                checkingUpdate = false
+                                if (release != null && AppUpdater.isNewerVersion(release.versionName)) {
+                                    availableUpdate = release
+                                } else if (release != null) {
+                                    Toast.makeText(
+                                        context,
+                                        "Songfy sudah versi terbaru (${BuildConfig.VERSION_NAME})",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Gagal memeriksa pembaruan.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (checkingUpdate) "Memeriksa..." else "Cek Pembaruan")
                     }
                 }
             }

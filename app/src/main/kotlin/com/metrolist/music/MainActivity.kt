@@ -107,6 +107,10 @@ import com.songfy.ui.LocalSongfyBackdrop
 import com.songfy.ui.backdrop.backdrops.layerBackdrop
 import com.songfy.ui.backdrop.backdrops.rememberLayerBackdrop
 import com.songfy.ui.songfyLiquidGlass
+import com.metrolist.music.constants.CheckForUpdatesKey
+import com.metrolist.music.ui.component.SoftwareUpdateDialog
+import com.metrolist.music.utils.AppReleaseInfo
+import com.metrolist.music.utils.AppUpdater
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -651,6 +655,16 @@ class MainActivity : FragmentActivity() {
                 val (forceBottomNav) = rememberPreference(ForceBottomNavBarKey, defaultValue = false)
                 val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
                 val (useNewMiniPlayerDesign) = rememberPreference(UseNewMiniPlayerDesignKey, defaultValue = true)
+                val (checkForUpdates) = rememberPreference(CheckForUpdatesKey, defaultValue = true)
+                var availableUpdate by remember { mutableStateOf<AppReleaseInfo?>(null) }
+                LaunchedEffect(checkForUpdates) {
+                    if (checkForUpdates) {
+                        val release = AppUpdater.fetchLatestRelease()
+                        if (release != null && AppUpdater.isNewerVersion(release.versionName)) {
+                            availableUpdate = release
+                        }
+                    }
+                }
                 val (defaultOpenTabInt) = rememberPreference(DefaultOpenTabKey, defaultValue = NavigationTab.HOME.name)
                 val defaultOpenTab = remember(defaultOpenTabInt) {
                     try {
@@ -940,6 +954,12 @@ class MainActivity : FragmentActivity() {
                     LocalListenTogetherManager provides listenTogetherManager,
                     LocalArtistNameAliases provides artistNameAliases,
                 ) {
+                    availableUpdate?.let { release ->
+                        SoftwareUpdateDialog(
+                            release = release,
+                            onDismiss = { availableUpdate = null },
+                        )
+                    }
                     Scaffold(
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         topBar = {

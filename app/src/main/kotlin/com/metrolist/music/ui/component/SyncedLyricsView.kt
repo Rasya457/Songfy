@@ -70,6 +70,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.border
 import com.metrolist.music.constants.LyricsClickKey
 import com.metrolist.music.constants.LyricsLineSpacingKey
 import com.metrolist.music.constants.LyricsScrollKey
@@ -130,6 +131,9 @@ fun SyncedLyricsView(
     bottomContentPadding: Dp = 160.dp,
     onUserInteraction: (() -> Unit)? = null,
     onScrollUp: (() -> Unit)? = null,
+    isSelectionMode: Boolean = false,
+    selectedIndices: Set<Int> = emptySet(),
+    onToggleLineSelection: (Int) -> Unit = {},
 ) {
     if (isLoading) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -222,8 +226,8 @@ fun SyncedLyricsView(
     }
 
     // Center active lyric line on line changes, translation toggles, and when auto-follow resumes.
-    LaunchedEffect(lines, activeIndex, isAutoFollowing, lyricsScroll, showTranslation, translations) {
-        if (!lyricsScroll || !isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
+    LaunchedEffect(lines, activeIndex, isAutoFollowing, lyricsScroll, showTranslation, translations, isSelectionMode) {
+        if (isSelectionMode || !lyricsScroll || !isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
         if (listState.isScrollInProgress && !isProgrammaticScroll) return@LaunchedEffect
         isProgrammaticScroll = true
         try {
@@ -407,27 +411,78 @@ fun SyncedLyricsView(
                     LyricsPosition.RIGHT -> Arrangement.End
                 }
 
+                val isLineSelected = index in selectedIndices
+                val effectiveAlpha = if (isSelectionMode) {
+                    if (isLineSelected) 1.0f else 0.65f
+                } else {
+                    animAlpha
+                }
+                val effectiveScale = if (isSelectionMode) 1.0f else animScale
+                val effectiveBlur = if (isSelectionMode) 0.dp else blurRadius
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer {
-                            alpha = animAlpha
-                            scaleX = animScale
-                            scaleY = animScale
+                            alpha = effectiveAlpha
+                            scaleX = effectiveScale
+                            scaleY = effectiveScale
                         }
                         .let {
-                            if (blurRadius > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                it.blur(blurRadius)
+                            if (effectiveBlur > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                it.blur(effectiveBlur)
                             } else it
                         }
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(14.dp))
+                        .let { base ->
+                            if (isSelectionMode) {
+                                base
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            colors = if (isLineSelected) {
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.16f),
+                                                    Color.White.copy(alpha = 0.08f),
+                                                )
+                                            } else {
+                                                listOf(
+                                                    Color.Black.copy(alpha = 0.24f),
+                                                    Color.Black.copy(alpha = 0.14f),
+                                                )
+                                            },
+                                        ),
+                                    )
+                                    .border(
+                                        width = if (isLineSelected) 1.dp else 0.5.dp,
+                                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            colors = if (isLineSelected) {
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.45f),
+                                                    Color.White.copy(alpha = 0.12f),
+                                                )
+                                            } else {
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.14f),
+                                                    Color.White.copy(alpha = 0.04f),
+                                                )
+                                            },
+                                        ),
+                                        shape = RoundedCornerShape(14.dp),
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                            } else base
+                        }
                         .clickable(
-                            enabled = lyricsClick && line.startMs >= 0,
+                            enabled = isSelectionMode || (lyricsClick && line.startMs >= 0),
                             interactionSource = lyricItemInteraction,
                             indication = null,
                         ) {
-                            isAutoFollowing = true
-                            onSeek(line.startMs)
+                            if (isSelectionMode) {
+                                onToggleLineSelection(index)
+                            } else {
+                                isAutoFollowing = true
+                                onSeek(line.startMs)
+                            }
                         },
                     horizontalAlignment = columnAlignment,
                 ) {
