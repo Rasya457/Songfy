@@ -69,17 +69,12 @@ fun MetrolistTheme(
         }
     }
 
-    // Use standard MaterialTheme instead of MaterialExpressiveTheme
-    val hazeState = rememberHazeState()
-    val hazeEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !rememberReducedTransparency()
+    // Use standard MaterialTheme without redundant root-level offscreen haze capture
     MaterialTheme(
         colorScheme = colorScheme,
         typography = SongfyTypography,
     ) {
-        CompositionLocalProvider(LocalSongfyHazeState provides hazeState.takeIf { hazeEnabled }) {
-            val hazeSource = if (hazeEnabled) Modifier.hazeSource(hazeState) else Modifier
-            Box(Modifier.fillMaxSize().then(hazeSource)) { content() }
-        }
+        Box(Modifier.fillMaxSize()) { content() }
     }
 }
 
@@ -104,7 +99,11 @@ internal fun Palette.rankedColors(
 fun ColorScheme.pureBlack(apply: Boolean) =
     if (apply) copy(
         surface = Color.Black,
-        background = Color.Black
+        background = Color.Black,
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color(0xFF09090C),
+        surfaceContainer = Color(0xFF101014),
+        surfaceContainerHigh = Color(0xFF18181D),
     ) else this
 
 val ColorSaver = object : Saver<Color, Int> {

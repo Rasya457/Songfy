@@ -222,6 +222,13 @@ fun AppearanceSettings(
             LyricsScrollKey,
             defaultValue = true,
         )
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val (lockScreenLyrics, onLockScreenLyricsChange) =
+        rememberPreference(
+            com.metrolist.music.constants.LockScreenLyricsKey,
+            defaultValue = false,
+        )
+    var showLockScreenPermissionDialog by remember { mutableStateOf(false) }
     val (hideStatusBarOnFullscreen, onHideStatusBarOnFullscreenChange) =
         rememberPreference(
             HideStatusBarOnFullscreenKey,
@@ -243,6 +250,41 @@ fun AppearanceSettings(
     var showLyricsAnimationStyleDialog by remember { mutableStateOf(false) }
     var showLyricsTextSizeDialog by remember { mutableStateOf(false) }
     var showLyricsLineSpacingDialog by remember { mutableStateOf(false) }
+
+    if (showLockScreenPermissionDialog) {
+        com.metrolist.music.ui.component.LiquidGlassAlertDialog(
+            onDismissRequest = { showLockScreenPermissionDialog = false },
+            icon = { Icon(painter = painterResource(R.drawable.lock), contentDescription = null) },
+            title = { Text("Izin Lirik di Layar Kunci") },
+            text = {
+                Text(
+                    "Untuk menampilkan lirik langsung saat layar kunci menyala, aktifkan izin \"Tampilkan di atas aplikasi lain\" untuk Songfy di pengaturan Android.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLockScreenPermissionDialog = false
+                        onLockScreenLyricsChange(true)
+                        runCatching {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:${context.packageName}"),
+                            )
+                            context.startActivity(intent)
+                        }
+                    },
+                ) {
+                    Text("Buka Pengaturan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLockScreenPermissionDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
 
     val (sliderStyle, onSliderStyleChange) =
         rememberEnumPreference(
@@ -1442,6 +1484,46 @@ fun AppearanceSettings(
                         )
                     }
 
+                    add(
+                        Material3SettingsItem(
+                            icon = painterResource(R.drawable.lock),
+                            title = { Text("Lirik di Layar Kunci") },
+                            description = { Text("Tampilkan lirik tersinkronisasi saat layar kunci menyala") },
+                            trailingContent = {
+                                Switch(
+                                    checked = lockScreenLyrics,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                                            !android.provider.Settings.canDrawOverlays(context)
+                                        ) {
+                                            showLockScreenPermissionDialog = true
+                                        } else {
+                                            onLockScreenLyricsChange(enabled)
+                                        }
+                                    },
+                                    thumbContent = {
+                                        Icon(
+                                            painter = painterResource(
+                                                id = if (lockScreenLyrics) R.drawable.check else R.drawable.close,
+                                            ),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                                        )
+                                    },
+                                )
+                            },
+                            onClick = {
+                                val next = !lockScreenLyrics
+                                if (next && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                                    !android.provider.Settings.canDrawOverlays(context)
+                                ) {
+                                    showLockScreenPermissionDialog = true
+                                } else {
+                                    onLockScreenLyricsChange(next)
+                                }
+                            },
+                        ),
+                    )
                     add(
                         Material3SettingsItem(
                             icon = painterResource(R.drawable.lyrics),

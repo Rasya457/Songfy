@@ -107,7 +107,7 @@ fun PlayerSettings(
     )
     val (crossfadeDuration, onCrossfadeDurationChange) = rememberPreference(
         CrossfadeDurationKey,
-        defaultValue = 5f
+        defaultValue = 3f
     )
     val (crossfadeGapless, onCrossfadeGaplessChange) = rememberPreference(
         CrossfadeGaplessKey,
@@ -318,10 +318,10 @@ fun PlayerSettings(
                             Column {
                                 Text(pluralStringResource(R.plurals.seconds, crossfadeDuration.toInt(), crossfadeDuration.toInt()))
                                 Slider(
-                                    value = crossfadeDuration,
+                                    value = crossfadeDuration.coerceIn(2f, 12f),
                                     onValueChange = onCrossfadeDurationChange,
-                                    valueRange = 1f..15f,
-                                    steps = 14
+                                    valueRange = 2f..12f,
+                                    steps = 9
                                 )
                             }
                         }

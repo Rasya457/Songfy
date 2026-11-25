@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Widget background - uses Material 3 surface colors -->
+<!-- Liquid Glass frosted translucent widget background -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:shape="rectangle">
-    <solid android:color="@android:color/system_accent1_100"
-        tools:targetApi="31" />
+    <gradient
+        android:angle="270"
+        android:startColor="#B8161820"
+        android:endColor="#CC0D0F15" />
+    <stroke
+        android:width="1dp"
+        android:color="#33FFFFFF" />
     <corners android:radius="28dp" />
 </shape>

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.songfy.ui.songfyGlassContainer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -67,7 +68,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
-import coil3.ImageLoader
+import coil3.imageLoader
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
@@ -118,7 +119,7 @@ fun ShareLyricsSheet(
         if (coverUrl.isNullOrBlank()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching {
-                val loader = ImageLoader(context)
+                val loader = context.imageLoader
                 val req = ImageRequest.Builder(context)
                     .data(coverUrl)
                     .allowHardware(false)
@@ -161,17 +162,22 @@ fun ShareLyricsSheet(
         context.startActivity(Intent.createChooser(intent, "Share lyrics"))
     }
 
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xFF1A1A1E),
+        containerColor = Color.Transparent,
         contentColor = Color.White,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        tonalElevation = 0.dp,
+        dragHandle = null,
+        shape = sheetShape,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .songfyGlassContainer(dark = true, shape = sheetShape)
                 .verticalScroll(rememberScrollState())
+                .padding(top = 16.dp)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 26.dp),
         ) {

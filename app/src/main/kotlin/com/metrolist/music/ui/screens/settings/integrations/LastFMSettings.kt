@@ -66,6 +66,7 @@ import com.metrolist.music.constants.ScrobbleDelayPercentKey
 import com.metrolist.music.constants.ScrobbleDelaySecondsKey
 import com.metrolist.music.constants.ScrobbleMinSongDurationKey
 import com.metrolist.music.ui.component.DefaultDialog
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.Material3SettingsGroup
 import com.metrolist.music.ui.component.Material3SettingsItem
@@ -130,7 +131,7 @@ fun LastFMSettings(
         var tempUsername by rememberSaveable { mutableStateOf("") }
         var tempPassword by rememberSaveable { mutableStateOf("") }
 
-        AlertDialog(
+        LiquidGlassAlertDialog(
             properties = DialogProperties(usePlatformDefaultWidth = false),
             onDismissRequest = {
                 if (!isLoggingIn) {

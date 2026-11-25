@@ -27,8 +27,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -148,7 +150,7 @@ fun Modifier.songfyLiquidGlass(
 
     if (blurSupported && !highContrast && backdrop != null && shape is CornerBasedShape) {
         val density = LocalDensity.current
-        val resolutionScale = 0.25f
+        val resolutionScale = 0.20f
         val blurPx = with(density) { 8.dp.toPx() } * resolutionScale
         val lensHeightPx = with(density) { (0.5f * 48f).dp.toPx() } * resolutionScale
         val lensAmountPx = with(density) { (0.5f * 48f).dp.toPx() } * resolutionScale
@@ -157,14 +159,14 @@ fun Modifier.songfyLiquidGlass(
         val effectsLambda: com.songfy.ui.backdrop.BackdropEffectScope.() -> Unit =
             remember(blurPx, lensHeightPx, lensAmountPx) {
                 {
-                    colorControls(saturation = 1.5f)
+                    colorControls(saturation = 1.35f)
                     blur(blurPx)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         lens(
                             refractionHeight = lensHeightPx,
                             refractionAmount = lensAmountPx,
-                            depthEffect = true,
-                            chromaticAberration = true,
+                            depthEffect = false,
+                            chromaticAberration = false,
                         )
                     }
                 }
@@ -219,4 +221,26 @@ fun Modifier.songfyLiquidGlass(
 
     return glass.border(borderWidth, borderColor, shape)
 }
+
+@Composable
+fun isSongfyDarkTheme(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+@Composable
+fun Modifier.songfyGlassContainer(
+    dark: Boolean = isSongfyDarkTheme(),
+    shape: Shape = RoundedCornerShape(28.dp),
+    shadowElevation: Dp = 24.dp,
+): Modifier = this
+    .clip(shape)
+    .songfyLiquidGlass(
+        dark = dark,
+        shadowElevation = shadowElevation,
+        shape = shape,
+    )
+    .background(if (dark) Color(0xC8141418) else Color(0xD8F6F7FA))
+    .border(
+        width = 0.75.dp,
+        color = if (dark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.08f),
+        shape = shape,
+    )
 

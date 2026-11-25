@@ -62,7 +62,7 @@ inline fun <reified T : Enum<T>> SortHeader(
                 }.padding(horizontal = 4.dp, vertical = 8.dp),
         )
 
-        DropdownMenu(
+        LiquidGlassDropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = { menuExpanded = false },
             modifier = Modifier.widthIn(min = 172.dp),

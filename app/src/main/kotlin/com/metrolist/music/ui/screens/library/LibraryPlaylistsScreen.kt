@@ -75,6 +75,7 @@ import com.metrolist.music.constants.YtmSyncKey
 import com.metrolist.music.db.entities.Playlist
 import com.metrolist.music.db.entities.PlaylistEntity
 import com.metrolist.music.ui.component.CreatePlaylistDialog
+import com.metrolist.music.ui.component.HideOnScrollFAB
 import com.metrolist.music.ui.component.SpotifyImportDialog
 import com.metrolist.music.ui.component.LibrarySearchEmptyPlaceholder
 import com.metrolist.music.ui.component.LibrarySearchHeader
@@ -576,21 +577,11 @@ fun LibraryPlaylistsScreen(
             }
         }
 
-        // Always visible + button (no scroll hiding)
-        FloatingActionButton(
+        // + button follows MiniPlayer & LiquidNavState collapse/expand animation
+        HideOnScrollFAB(
+            lazyListState = lazyListState,
+            icon = R.drawable.add,
             onClick = { showCreatePlaylistDialog = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current
-                        .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
-                )
-                .padding(16.dp)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.add),
-                contentDescription = stringResource(R.string.create_playlist),
-            )
-        }
+        )
     }
 }

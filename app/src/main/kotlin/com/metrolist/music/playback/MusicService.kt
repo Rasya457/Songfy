@@ -546,6 +546,26 @@ class MusicService :
     var castConnectionHandler: CastConnectionHandler? = null
         private set
 
+    private fun maybeShowLockScreenLyrics(requireLocked: Boolean) {
+        if (!dataStore.get(com.metrolist.music.constants.LockScreenLyricsKey, false)) return
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+        if (requireLocked && km?.isKeyguardLocked != true) return
+        runCatching {
+            val lockIntent = Intent(
+                this@MusicService,
+                com.metrolist.music.ui.screens.LockScreenLyricsActivity::class.java,
+            ).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
+                )
+            }
+            startActivity(lockIntent)
+        }
+    }
+
     private val screenStateReceiver =
         object : BroadcastReceiver() {
             override fun onReceive(
@@ -556,6 +576,9 @@ class MusicService :
                     Intent.ACTION_SCREEN_OFF -> {
                         isScreenOff = true
                         stopWidgetUpdates()
+                        if (::player.isInitialized && player.isPlaying) {
+                            maybeShowLockScreenLyrics(requireLocked = false)
+                        }
                         Timber.tag("DiscordSvc").i("SCREEN_OFF: cancelling pause timeout, delaying disconnect 10m")
                         screenOffHandler.removeCallbacks(pauseTimeout)
                         screenOffHandler.postDelayed(screenOffTimeout, 600_000)
@@ -565,6 +588,7 @@ class MusicService :
                         isScreenOff = false
                         if (::player.isInitialized && player.isPlaying) {
                             startWidgetUpdates()
+                            maybeShowLockScreenLyrics(requireLocked = true)
                         }
                         Timber.tag("DiscordSvc").i("SCREEN_ON: removing disconnect delay")
                         screenOffHandler.removeCallbacks(screenOffTimeout)

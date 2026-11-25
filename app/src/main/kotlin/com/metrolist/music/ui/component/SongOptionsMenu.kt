@@ -12,13 +12,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -27,8 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,14 +34,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.songfy.ui.icons.SongfyIcons
+import com.songfy.ui.songfyLiquidGlass
 
-// Spesifikasi panel asli BitChord (IosMenu.kt / SongActionsMenu.kt)
-private val MenuFill = Color(0xFF1C1C1E).copy(alpha = 0.94f)
-private val MenuRim = Color.White.copy(alpha = 0.12f)
-private val MenuSeparator = Color.White.copy(alpha = 0.10f)
+private val MenuSeparator = Color.White.copy(alpha = 0.12f)
 private val MenuSecondary = Color.White.copy(alpha = 0.65f)
 private val MenuShape = RoundedCornerShape(28.dp)
-private val MenuDefaultWidth = 268.dp
+private val MenuDefaultWidth = 264.dp
 
 /**
  * SongOptionsMenu — Panel menu mengambang (floating popover) gaya iOS ala BitChord.
@@ -76,9 +69,9 @@ fun SongOptionsMenu(
     val alignment = if (isLyricsOrQueueMode) Alignment.TopEnd else Alignment.BottomEnd
     val transformOrigin = if (isLyricsOrQueueMode) TransformOrigin(0.92f, 0.08f) else TransformOrigin(0.92f, 0.92f)
     val menuPadding = if (isLyricsOrQueueMode) {
-        Modifier.padding(end = 16.dp, top = 68.dp)
+        Modifier.padding(end = 16.dp, top = 64.dp)
     } else {
-        Modifier.padding(end = 16.dp, bottom = 120.dp)
+        Modifier.padding(end = 16.dp, bottom = 36.dp)
     }
 
     // Scrim gelap di belakang yang memudar sesuai animasi progress
@@ -96,29 +89,23 @@ fun SongOptionsMenu(
         Column(
             modifier = menuPadding
                 .width(width)
-                .heightIn(max = 520.dp)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     this.alpha = alpha
                     this.transformOrigin = transformOrigin
                 }
-                .shadow(
-                    elevation = 28.dp,
+                .songfyLiquidGlass(
+                    dark = true,
+                    shadowElevation = 28.dp,
                     shape = MenuShape,
-                    ambientColor = Color.Black.copy(alpha = 0.45f),
-                    spotColor = Color.Black.copy(alpha = 0.45f),
                 )
-                .clip(MenuShape)
-                .background(MenuFill)
-                .border(0.5.dp, MenuRim, MenuShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     enabled = false,
-                ) {} // Menahan tap agar tidak tembus ke scrim
-                .padding(vertical = 8.dp)
-                .verticalScroll(rememberScrollState()),
+                ) {}
+                .padding(vertical = 6.dp),
         ) {
             // Quick action: Share (ikon di atas, teks di tengah)
             if (!isLocal) {
@@ -130,42 +117,27 @@ fun SongOptionsMenu(
                             indication = ripple(bounded = true),
                             onClick = { onAction("share") },
                         )
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(
                         imageVector = SongfyIcons.Share,
                         contentDescription = "Share",
                         tint = Color.White,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(22.dp),
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = "Share",
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 }
+                HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             }
 
-            // ── Grup 1: Kualitas Audio & Info Lagu ──
-            HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
-            MenuRow(
-                icon = SongfyIcons.Sliders,
-                title = "Upgrade quality",
-                subtitle = "Audio format & technical specs",
-                onClick = { onAction("upgrade") },
-            )
-            MenuRow(
-                icon = SongfyIcons.Info,
-                title = "Song Info",
-                subtitle = "Complete track metadata",
-                onClick = { onAction("info") },
-            )
-
-            // ── Grup 2: Pemutaran, Antrean & Playlist ──
-            HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
+            // ── Grup 1: Pemutaran, Antrean & Playlist ──
             MenuRow(
                 icon = SongfyIcons.PlayNext,
                 title = "Play next",
@@ -181,18 +153,8 @@ fun SongOptionsMenu(
                 title = "Add to playlist",
                 onClick = { onAction("playlist") },
             )
-            MenuRow(
-                icon = SongfyIcons.Radio,
-                title = "Start radio",
-                onClick = { onAction("radio") },
-            )
-            MenuRow(
-                icon = SongfyIcons.Video,
-                title = "Convert to video",
-                onClick = { onAction("video") },
-            )
 
-            // ── Grup 3: Unduhan & Cache ──
+            // ── Grup 2: Unduhan & Cache ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             if (!isDownloaded) {
                 MenuRow(
@@ -215,7 +177,7 @@ fun SongOptionsMenu(
                 )
             }
 
-            // ── Grup 4: Album & Artis ──
+            // ── Grup 3: Album, Artis & Info Lagu ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
                 icon = SongfyIcons.Album,
@@ -229,8 +191,13 @@ fun SongOptionsMenu(
                 subtitle = artistName,
                 onClick = { onAction("artist") },
             )
+            MenuRow(
+                icon = SongfyIcons.Info,
+                title = "Song Info",
+                onClick = { onAction("info") },
+            )
 
-            // ── Grup 5: Alat Pemutar ──
+            // ── Grup 4: Alat Pemutar ──
             HorizontalDivider(color = MenuSeparator, thickness = 0.5.dp)
             MenuRow(
                 icon = SongfyIcons.Moon,
@@ -247,11 +214,6 @@ fun SongOptionsMenu(
                 icon = SongfyIcons.Sliders,
                 title = "Lyrics offset",
                 onClick = { onAction("lyrics_offset") },
-            )
-            MenuRow(
-                icon = SongfyIcons.Info,
-                title = "Copy log",
-                onClick = { onAction("copy_log") },
             )
         }
     }
@@ -272,7 +234,7 @@ private fun MenuRow(
                 indication = ripple(bounded = true),
                 onClick = onClick,
             )
-            .padding(horizontal = 20.dp, vertical = 13.dp),
+            .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

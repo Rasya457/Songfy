@@ -6,11 +6,15 @@
 package com.metrolist.music.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +22,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -47,7 +55,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -90,6 +102,7 @@ import com.metrolist.music.ui.component.AlbumListItem
 import com.metrolist.music.ui.component.ArtistGridItem
 import com.metrolist.music.ui.component.ArtistListItem
 import com.metrolist.music.ui.component.CreatePlaylistDialog
+import com.metrolist.music.ui.component.HideOnScrollFAB
 import com.metrolist.music.ui.component.SpotifyImportDialog
 import com.metrolist.music.ui.component.LibrarySearchEmptyPlaceholder
 import com.metrolist.music.ui.component.LibrarySearchHeader
@@ -397,19 +410,27 @@ fun LibraryMixScreen(
             keyboardController = keyboardController,
             modifier = Modifier.padding(start = 16.dp),
         ) {
-            SortHeader(
-                sortType = sortType,
-                sortDescending = sortDescending,
-                onSortTypeChange = onSortTypeChange,
-                onSortDescendingChange = onSortDescendingChange,
-                sortTypeText = { sortType ->
-                    when (sortType) {
-                        MixSortType.CREATE_DATE -> R.string.sort_by_create_date
-                        MixSortType.LAST_UPDATED -> R.string.sort_by_last_updated
-                        MixSortType.NAME -> R.string.sort_by_name
-                    }
-                },
-            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF121216))
+                    .border(0.75.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
+                    .padding(horizontal = 10.dp),
+            ) {
+                SortHeader(
+                    sortType = sortType,
+                    sortDescending = sortDescending,
+                    onSortTypeChange = onSortTypeChange,
+                    onSortDescendingChange = onSortDescendingChange,
+                    sortTypeText = { sortType ->
+                        when (sortType) {
+                            MixSortType.CREATE_DATE -> R.string.sort_by_create_date
+                            MixSortType.LAST_UPDATED -> R.string.sort_by_last_updated
+                            MixSortType.NAME -> R.string.sort_by_name
+                        }
+                    },
+                )
+            }
 
             Spacer(Modifier.weight(1f))
 
@@ -450,6 +471,9 @@ fun LibraryMixScreen(
 
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val pullRefreshState = rememberPullToRefreshState()
+    val statusBarTop = WindowInsets.systemBars.only(WindowInsetsSides.Top).asPaddingValues().calculateTopPadding()
+    val playerBottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
+    val libraryContentPadding = PaddingValues(top = statusBarTop + 4.dp, bottom = playerBottom)
 
     Box(
         modifier =
@@ -465,7 +489,7 @@ fun LibraryMixScreen(
             LibraryViewType.LIST -> {
                 LazyColumn(
                     state = lazyListState,
-                    contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
+                    contentPadding = libraryContentPadding,
                 ) {
                     item(
                         key = "filter",
@@ -479,121 +503,6 @@ fun LibraryMixScreen(
                         contentType = CONTENT_TYPE_HEADER,
                     ) {
                         headerContent()
-                    }
-
-                    if (showLikedPlaylist) {
-                        item(
-                            key = "likedPlaylist",
-                            contentType = { CONTENT_TYPE_PLAYLIST },
-                        ) {
-                            PlaylistListItem(
-                                playlist = likedPlaylist,
-                                autoPlaylist = true,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            navController.navigate("auto_playlist/liked")
-                                        }.animateItem(),
-                            )
-                        }
-                    }
-
-                    if (showDownloadedPlaylist) {
-                        item(
-                            key = "downloadedPlaylist",
-                            contentType = { CONTENT_TYPE_PLAYLIST },
-                        ) {
-                            PlaylistListItem(
-                                playlist = downloadPlaylist,
-                                autoPlaylist = true,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            navController.navigate("auto_playlist/downloaded")
-                                        }
-                                        .animateItem(),
-                            )
-                        }
-                    }
-
-                    if (showCachedPlaylists) {
-                        item(
-                            key = "cachedPlaylist",
-                            contentType = { CONTENT_TYPE_PLAYLIST },
-                        ) {
-                            PlaylistListItem(
-                                playlist = cachedPlaylist,
-                                autoPlaylist = true,
-                                modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        navController.navigate("cache_playlist/cached")
-                                    }
-                                    .animateItem(),
-                            )
-                        }
-                    }
-
-                    if (showTopPlaylists) {
-                        item(
-                            key = "TopPlaylist",
-                            contentType = { CONTENT_TYPE_PLAYLIST },
-                        ) {
-                            PlaylistListItem(
-                                playlist = topPlaylist,
-                                autoPlaylist = true,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            navController.navigate("top_playlist/$topSize")
-                                        }.animateItem(),
-                            )
-                        }
-                    }
-
-                    if (showUploadedPlaylists) {
-                        item(
-                            key = "uploadedPlaylist",
-                            contentType = { CONTENT_TYPE_PLAYLIST },
-                        ) {
-                            PlaylistListItem(
-                                playlist = uploadedPlaylist,
-                                autoPlaylist = true,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            navController.navigate("auto_playlist/uploaded")
-                                        }.animateItem(),
-                            )
-                        }
-                    }
-
-                    item(
-                        key = "spotifyImportFolder",
-                        contentType = { CONTENT_TYPE_PLAYLIST },
-                    ) {
-                        PlaylistListItem(
-                            playlist = Playlist(
-                                playlist = PlaylistEntity(
-                                    id = "spotify_import",
-                                    name = "Impor dari Spotify",
-                                ),
-                                songCount = 0,
-                                songThumbnails = emptyList(),
-                            ),
-                            autoPlaylist = true,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showSpotifyImportDialog = true
-                                    }.animateItem(),
-                        )
                     }
 
                     items(
@@ -791,6 +700,82 @@ fun LibraryMixScreen(
                         }
                     }
 
+                    if (showLikedPlaylist || showDownloadedPlaylist || showCachedPlaylists || showTopPlaylists || showUploadedPlaylists || searchQuery.isBlank()) {
+                        item(
+                            key = "koleksi_header",
+                            contentType = CONTENT_TYPE_HEADER,
+                        ) {
+                            Text(
+                                text = "Koleksi",
+                                color = MaterialTheme.colorScheme.onBackground,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+                            )
+                        }
+                    }
+
+                    if (showLikedPlaylist) {
+                        item(key = "likedPlaylist", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.favorite,
+                                title = stringResource(R.string.liked),
+                                onClick = { navController.navigate("auto_playlist/liked") },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (showDownloadedPlaylist) {
+                        item(key = "downloadedPlaylist", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.offline,
+                                title = stringResource(R.string.offline),
+                                onClick = { navController.navigate("auto_playlist/downloaded") },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (showCachedPlaylists) {
+                        item(key = "cachedPlaylist", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.cached,
+                                title = stringResource(R.string.cached_playlist),
+                                onClick = { navController.navigate("cache_playlist/cached") },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (showTopPlaylists) {
+                        item(key = "TopPlaylist", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.trending_up,
+                                title = stringResource(R.string.my_top) + " $topSize",
+                                onClick = { navController.navigate("top_playlist/$topSize") },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (showUploadedPlaylists) {
+                        item(key = "uploadedPlaylist", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.backup,
+                                title = stringResource(R.string.uploaded_playlist),
+                                onClick = { navController.navigate("auto_playlist/uploaded") },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                    if (searchQuery.isBlank() || "spotify".contains(searchQuery, ignoreCase = true)) {
+                        item(key = "spotifyImportFolder", contentType = { CONTENT_TYPE_PLAYLIST }) {
+                            KoleksiRow(
+                                iconRes = R.drawable.playlist_add,
+                                title = "Impor dari Spotify",
+                                onClick = { showSpotifyImportDialog = true },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+
                     if (
                         filteredItems.isEmpty() &&
                         !showLikedPlaylist &&
@@ -814,7 +799,7 @@ fun LibraryMixScreen(
                         GridCells.Adaptive(
                             minSize = GridThumbnailHeight + if (gridItemSize == GridItemSize.BIG) 24.dp else (-24).dp,
                         ),
-                    contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
+                    contentPadding = libraryContentPadding,
                 ) {
                     item(
                         key = "filter",
@@ -1111,22 +1096,12 @@ fun LibraryMixScreen(
             }
         }
 
-        // Always visible + button (no scroll hiding)
-        FloatingActionButton(
+        // + button follows MiniPlayer & LiquidNavState collapse/expand animation
+        HideOnScrollFAB(
+            lazyListState = lazyListState,
+            icon = R.drawable.add,
             onClick = { showCreatePlaylistDialog = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current
-                        .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
-                )
-                .padding(16.dp)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.add),
-                contentDescription = stringResource(R.string.create_playlist),
-            )
-        }
+        )
 
         Indicator(
             isRefreshing = isRefreshing,
@@ -1134,7 +1109,44 @@ fun LibraryMixScreen(
             modifier =
                 Modifier
                     .align(Alignment.TopCenter)
-                    .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
+                    .padding(top = statusBarTop),
+        )
+    }
+}
+
+@Composable
+private fun KoleksiRow(
+    iconRes: Int,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(18.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 15.5.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "›",
+            color = Color(0xFF8E8E93),
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Normal,
         )
     }
 }

@@ -55,6 +55,7 @@ import com.metrolist.music.constants.MaxImageCacheSizeKey
 import com.metrolist.music.constants.MaxSongCacheSizeKey
 import com.metrolist.music.extensions.tryOrNull
 import com.metrolist.music.ui.component.ActionPromptDialog
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.Material3SettingsGroup
 import com.metrolist.music.ui.component.Material3SettingsItem
@@ -249,7 +250,7 @@ fun StorageSettings(
 
     // Confirmation Dialog
     if (showCacheWarningDialog) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showCacheWarningDialog = false },
             title = { Text(stringResource(R.string.cache_size_warning_title)) },
             text = {

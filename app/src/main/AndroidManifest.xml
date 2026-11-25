@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Microphone feature for music recognition (not required) -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -53,6 +54,16 @@
             android:theme="@style/Theme.Metrolist"
             android:excludeFromRecents="true"
             android:process=":crash" />
+
+        <activity
+            android:name=".ui.screens.LockScreenLyricsActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Metrolist"
+            android:turnScreenOn="false" />
 
         <activity
             android:name=".MainActivity"

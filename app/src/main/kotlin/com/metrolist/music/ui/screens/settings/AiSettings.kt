@@ -61,6 +61,7 @@ import com.metrolist.music.constants.OpenRouterModelKey
 import com.metrolist.music.constants.TranslateLanguageKey
 import com.metrolist.music.constants.TranslateModeKey
 import com.metrolist.music.ui.component.EnumDialog
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
 import com.metrolist.music.ui.component.Material3SettingsGroup
 import com.metrolist.music.ui.component.Material3SettingsItem
 import com.metrolist.music.ui.component.TextFieldDialog
@@ -185,7 +186,7 @@ fun AiSettings(navController: NavController) {
     var showSystemPromptDialog by rememberSaveable { mutableStateOf(false) }
 
     if (showProviderHelpDialog) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showProviderHelpDialog = false },
             confirmButton = {
                 TextButton(onClick = { showProviderHelpDialog = false }) {
@@ -252,7 +253,7 @@ fun AiSettings(navController: NavController) {
     }
 
     if (showTranslateModeHelpDialog) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showTranslateModeHelpDialog = false },
             confirmButton = {
                 TextButton(onClick = { showTranslateModeHelpDialog = false }) {

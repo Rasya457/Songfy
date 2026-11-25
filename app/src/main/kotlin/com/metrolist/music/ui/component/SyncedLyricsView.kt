@@ -71,6 +71,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.border
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import com.songfy.ui.songfyLiquidGlass
 import com.metrolist.music.constants.LyricsClickKey
 import com.metrolist.music.constants.LyricsLineSpacingKey
 import com.metrolist.music.constants.LyricsScrollKey
@@ -93,6 +96,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -218,9 +222,9 @@ fun SyncedLyricsView(
             }
     }
 
-    LaunchedEffect(lines, isAutoFollowing, listState.isScrollInProgress) {
-        if (!isAutoFollowing && !listState.isScrollInProgress) {
-            delay(2500L)
+    LaunchedEffect(lines, isAutoFollowing, listState.isScrollInProgress, isSelectionMode, lyricsScroll) {
+        if (lyricsScroll && !isSelectionMode && !isAutoFollowing && !listState.isScrollInProgress) {
+            delay(5000L)
             isAutoFollowing = true
         }
     }
@@ -238,7 +242,7 @@ fun SyncedLyricsView(
                 val targetOffset = (viewport.viewportStartOffset + viewport.viewportEndOffset - activeItem.size) / 2f
                 listState.animateScrollBy(
                     value = activeItem.offset - targetOffset,
-                    animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 175f),
                 )
             } else {
                 val vpHeight = listState.layoutInfo.viewportSize.height
@@ -254,7 +258,7 @@ fun SyncedLyricsView(
                     val targetOffset = (viewport.viewportStartOffset + viewport.viewportEndOffset - settled.size) / 2f
                     listState.animateScrollBy(
                         value = settled.offset - targetOffset,
-                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                        animationSpec = spring(dampingRatio = 0.88f, stiffness = 175f),
                     )
                 }
             }
@@ -326,7 +330,7 @@ fun SyncedLyricsView(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(top = 28.dp, bottom = bottomContentPadding, start = 20.dp, end = 20.dp),
-            verticalArrangement = Arrangement.spacedBy((18f * lyricsLineSpacing).dp),
+            verticalArrangement = Arrangement.spacedBy((20f * lyricsLineSpacing).dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             itemsIndexed(
@@ -353,7 +357,7 @@ fun SyncedLyricsView(
                 val animAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
                     animationSpec = tween(
-                        durationMillis = 700,
+                        durationMillis = 550,
                         delayMillis = lineTransitionDelay,
                         easing = FastOutSlowInEasing,
                     ),
@@ -362,16 +366,15 @@ fun SyncedLyricsView(
 
                 // Animated scale
                 val targetScale = when {
-                    isCurrent -> 1.02f
-                    distance == 1 -> 0.98f
-                    else -> 0.95f
+                    isCurrent -> 1.03f
+                    distance == 1 -> 0.97f
+                    else -> 0.94f
                 }
                 val animScale by animateFloatAsState(
                     targetValue = targetScale,
-                    animationSpec = tween(
-                        durationMillis = 400,
-                        delayMillis = lineTransitionDelay,
-                        easing = FastOutSlowInEasing,
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = 260f,
                     ),
                     label = "lyricsLineScale",
                 )
@@ -388,7 +391,7 @@ fun SyncedLyricsView(
                 val blurRadius by animateDpAsState(
                     targetValue = targetBlurRadius,
                     animationSpec = tween(
-                        durationMillis = 700,
+                        durationMillis = 550,
                         delayMillis = lineTransitionDelay,
                         easing = FastOutSlowInEasing,
                     ),
@@ -486,21 +489,42 @@ fun SyncedLyricsView(
                         },
                     horizontalAlignment = columnAlignment,
                 ) {
+                    val mainFontSize = (lyricsTextSize + 8f).sp
+                    val mainLineHeight = ((lyricsTextSize + 8f) * 1.18f).sp
                     if (isCurrent && line.isWordSynced) {
+                        val wordGroups = remember(line.text, line.words) {
+                            groupSyncWordsByWhitespace(line.text, line.words)
+                        }
                         FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = flowArrangement,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            line.words.forEachIndexed { wi, word ->
-                                ActiveKaraokeWord(
-                                    word = word,
-                                    positionProvider = positionProvider,
-                                    animTick = animTick,
-                                    fontSize = (lyricsTextSize + 4f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontStyle = FontStyle.Italic,
-                                )
-                                if (wi < line.words.lastIndex) {
+                            wordGroups.forEachIndexed { gi, group ->
+                                if (group.size == 1) {
+                                    ActiveKaraokeWord(
+                                        word = group[0],
+                                        positionProvider = positionProvider,
+                                        animTick = animTick,
+                                        fontSize = mainFontSize,
+                                        fontWeight = FontWeight.Bold,
+                                        fontStyle = FontStyle.Normal,
+                                    )
+                                } else {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        group.forEach { syllable ->
+                                            ActiveKaraokeWord(
+                                                word = syllable,
+                                                positionProvider = positionProvider,
+                                                animTick = animTick,
+                                                fontSize = mainFontSize,
+                                                fontWeight = FontWeight.Bold,
+                                                fontStyle = FontStyle.Normal,
+                                            )
+                                        }
+                                    }
+                                }
+                                if (gi < wordGroups.lastIndex) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                 }
                             }
@@ -509,10 +533,12 @@ fun SyncedLyricsView(
                         Text(
                             text = line.text,
                             color = Color.White,
-                            fontSize = (lyricsTextSize + 4f).sp,
+                            fontSize = mainFontSize,
+                            lineHeight = mainLineHeight,
                             fontWeight = FontWeight.Bold,
-                            fontStyle = FontStyle.Italic,
+                            fontStyle = FontStyle.Normal,
                             textAlign = textAlignment,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
 
@@ -530,10 +556,11 @@ fun SyncedLyricsView(
                             Text(
                                 text = translationText,
                                 color = Color.White.copy(alpha = if (isCurrent) 0.75f else 0.40f),
-                                fontSize = (lyricsTextSize * 0.67f).sp,
+                                fontSize = (lyricsTextSize * 0.75f).sp,
                                 fontStyle = FontStyle.Normal,
                                 fontWeight = FontWeight.Normal,
                                 textAlign = textAlignment,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -545,9 +572,10 @@ fun SyncedLyricsView(
                             Text(
                                 text = tr,
                                 color = Color.White.copy(alpha = if (isCurrent) 0.70f else 0.35f),
-                                fontSize = (lyricsTextSize * 0.58f).sp,
+                                fontSize = (lyricsTextSize * 0.70f).sp,
                                 fontStyle = FontStyle.Italic,
                                 textAlign = textAlignment,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -599,6 +627,45 @@ fun SyncedLyricsView(
                         modifier = Modifier.size(22.dp),
                     )
                 }
+            }
+        }
+
+        // Floating "Sinkron ulang" pill when user scrolls away from active lyric
+        AnimatedVisibility(
+            visible = lyricsScroll && !isAutoFollowing && !isSelectionMode && activeIndex in lines.indices,
+            enter = fadeIn(tween(200)) + slideInVertically { it / 2 },
+            exit = fadeOut(tween(160)) + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .songfyLiquidGlass(
+                        dark = true,
+                        shadowElevation = 12.dp,
+                        shape = CircleShape,
+                    )
+                    .clickable {
+                        isAutoFollowing = true
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.sync),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = "Sinkron ulang",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -712,6 +779,41 @@ private fun InterludeDots(
 // ─────────────────────────────────────────────────────────────────────────────
 // Fast O(log N) Binary Search for Current Line
 // ─────────────────────────────────────────────────────────────────────────────
+
+private fun groupSyncWordsByWhitespace(
+    lineText: String,
+    words: List<com.metrolist.music.lyrics.SyncWord>,
+): List<List<com.metrolist.music.lyrics.SyncWord>> {
+    if (words.isEmpty()) return emptyList()
+    if (lineText.isBlank()) return words.map { listOf(it) }
+
+    val groups = mutableListOf<MutableList<com.metrolist.music.lyrics.SyncWord>>()
+    var current = mutableListOf<com.metrolist.music.lyrics.SyncWord>()
+    var cursor = 0
+
+    for (word in words) {
+        val token = word.text.trim()
+        if (token.isEmpty()) continue
+        val idx = lineText.indexOf(token, startIndex = cursor, ignoreCase = true)
+        if (idx == -1) {
+            if (current.isNotEmpty()) {
+                groups.add(current)
+                current = mutableListOf()
+            }
+            groups.add(mutableListOf(word))
+            continue
+        }
+        val hasSpaceBefore = current.isEmpty() || lineText.substring(cursor, idx).any { it.isWhitespace() }
+        if (hasSpaceBefore && current.isNotEmpty()) {
+            groups.add(current)
+            current = mutableListOf()
+        }
+        current.add(word)
+        cursor = idx + token.length
+    }
+    if (current.isNotEmpty()) groups.add(current)
+    return if (groups.isEmpty()) words.map { listOf(it) } else groups
+}
 
 private fun findActiveLineIndex(lines: List<SyncLine>, posMs: Long): Int {
     if (lines.isEmpty() || lines.first().startMs < 0) return -1

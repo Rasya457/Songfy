@@ -81,10 +81,19 @@ internal fun buildSpeedDialItems(
     keepListening: List<YTItem>,
     quickPicks: List<YTItem>,
     home: List<YTItem>,
-): List<YTItem> =
-    (pinned + keepListening + quickPicks + home)
+): List<YTItem> {
+    // Interleave personal history (keepListening), hybrid quickPicks, and YT collaborative home items
+    val mixed = mutableListOf<YTItem>()
+    val maxLen = maxOf(keepListening.size, quickPicks.size, home.size)
+    for (i in 0 until maxLen) {
+        if (i < keepListening.size) mixed.add(keepListening[i])
+        if (i < home.size) mixed.add(home[i])
+        if (i < quickPicks.size) mixed.add(quickPicks[i])
+    }
+    return (pinned + mixed)
         .distinctBy { it.id }
         .take(27)
+}
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -337,11 +346,18 @@ class HomeViewModel @Inject constructor(
                     }
                 }
 
-                // Combine all sources and remove duplicates
-                val combined = (relatedSongs + forgotten + ytSimilarSongs)
-                    .distinctBy { it.id }
-                    .shuffled()
-                    .take(20)
+                // Combine sources with Hybrid Recommendation (Content-Based + Collaborative + Diversity)
+                val topArtistWeights = database.mostPlayedArtists(LocalDateTime.now().minusWeeks(4), limit = 15)
+                    .first()
+                    .mapIndexed { index, artist -> artist.id to (1.5f - index * 0.08f).coerceAtLeast(0.25f) }
+                    .toMap()
+
+                val combined = rankQuickPicksHybrid(
+                    localRelated = relatedSongs,
+                    forgottenFavorites = forgotten,
+                    collaborativeSongs = ytSimilarSongs,
+                    artistWeights = topArtistWeights,
+                )
 
                 quickPicks.value = combined.ifEmpty { relatedSongs.shuffled().take(20) }
             }
@@ -352,6 +368,64 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Hybrid Recommendation reranker combining:
+     * 1. Content-Based affinity (top artists, liked/library status, play time)
+     * 2. Collaborative signal (songs from YouTube Music `related` endpoint)
+     * 3. Diversity penalty per artist + light exploration jitter
+     */
+    private fun rankQuickPicksHybrid(
+        localRelated: List<Song>,
+        forgottenFavorites: List<Song>,
+        collaborativeSongs: List<Song>,
+        artistWeights: Map<String, Float>,
+        limit: Int = 20,
+    ): List<Song> {
+        val collaborativeIds = collaborativeSongs.mapTo(HashSet()) { it.id }
+        val forgottenIds = forgottenFavorites.mapTo(HashSet()) { it.id }
+        val candidates = (localRelated + forgottenFavorites + collaborativeSongs).distinctBy { it.id }
+        if (candidates.isEmpty()) return emptyList()
+
+        val baseScores = candidates.associate { song ->
+            var score = 0f
+            // Content-Based: artist affinity + liked/library + play duration
+            val artistAffinity = song.artists.maxOfOrNull { artistWeights[it.id] ?: 0f } ?: 0f
+            score += artistAffinity * 2.0f
+            if (song.song.liked) score += 2.2f
+            if (song.song.inLibrary != null) score += 0.9f
+            val minutesPlayed = (song.song.totalPlayTime / 60_000f).coerceAtLeast(0f)
+            score += kotlin.math.ln(minutesPlayed + 1f).coerceAtMost(2.0f)
+
+            // Collaborative & Rediscovery signals
+            if (song.id in collaborativeIds) score += 2.4f
+            if (song.id in forgottenIds) score += 1.4f
+
+            // Light exploration jitter so each refresh feels fresh
+            score += kotlin.random.Random.nextFloat() * 0.9f
+            song.id to score
+        }
+
+        // Greedy selection with per-artist diversity penalty
+        val remaining = candidates.toMutableList()
+        val selected = mutableListOf<Song>()
+        val artistCounts = HashMap<String, Int>()
+
+        while (selected.size < limit && remaining.isNotEmpty()) {
+            val best = remaining.maxByOrNull { song ->
+                val primaryArtistId = song.artists.firstOrNull()?.id
+                val repeats = if (primaryArtistId != null) artistCounts[primaryArtistId] ?: 0 else 0
+                (baseScores[song.id] ?: 0f) - repeats * 1.6f
+            } ?: break
+
+            remaining.remove(best)
+            selected.add(best)
+            best.artists.firstOrNull()?.id?.let { artistId ->
+                artistCounts[artistId] = (artistCounts[artistId] ?: 0) + 1
+            }
+        }
+        return selected
     }
 
     private suspend fun getCommunityPlaylists() {

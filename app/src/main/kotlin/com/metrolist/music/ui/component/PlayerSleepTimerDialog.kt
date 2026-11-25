@@ -38,7 +38,7 @@ fun PlayerSleepTimerDialog(
     val playerConnection = LocalPlayerConnection.current ?: return
     var minutes by remember { mutableFloatStateOf(30f) }
 
-    AlertDialog(
+    LiquidGlassAlertDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
         icon = {

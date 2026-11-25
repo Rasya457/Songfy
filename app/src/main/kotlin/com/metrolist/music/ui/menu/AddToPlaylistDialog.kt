@@ -76,6 +76,18 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.FilterChipDefaults
+import android.widget.Toast
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.songfy.ui.songfyLiquidGlass
 import com.metrolist.music.LocalSyncUtils
 
 @Composable
@@ -88,6 +100,7 @@ fun AddToPlaylistDialog(
     onDismiss: () -> Unit,
     viewModel: PlaylistsViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val database = LocalDatabase.current
     val syncUtils = LocalSyncUtils.current
     val coroutineScope = rememberCoroutineScope()
@@ -137,6 +150,13 @@ fun AddToPlaylistDialog(
         targetPlaylist.playlist.browseId?.let { browseId ->
             syncUtils.scheduleAddToPlaylist(browseId, targetPlaylist.id, ids)
         }
+        withContext(Dispatchers.Main) {
+            Toast.makeText(
+                context,
+                "Ditambahkan ke \"${targetPlaylist.playlist.name}\"",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     LaunchedEffect(isVisible, playlists.isEmpty()) {
@@ -162,9 +182,27 @@ fun AddToPlaylistDialog(
     }
 
     if (isVisible) {
-        ListDialog(
-            onDismiss = onDismiss,
+        val dialogShape = RoundedCornerShape(28.dp)
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
+            CompositionLocalProvider(LocalContentColor provides Color.White) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth(0.90f)
+                        .heightIn(max = 560.dp)
+                        .clip(dialogShape)
+                        .songfyLiquidGlass(
+                            dark = true,
+                            shadowElevation = 24.dp,
+                            shape = dialogShape,
+                        )
+                        .background(Color(0xC816161C))
+                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), dialogShape)
+                        .padding(vertical = 20.dp),
+                ) {
+                    LazyColumn {
             item {
                 val interactionSource = remember { MutableInteractionSource() }
                 val isPressed by interactionSource.collectIsPressedAsState()
@@ -315,6 +353,9 @@ fun AddToPlaylistDialog(
                         }
                     }
                 )
+            }
+        }
+                }
             }
         }
     }

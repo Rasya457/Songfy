@@ -91,6 +91,7 @@ import com.metrolist.music.playback.ExoDownloadService
 import com.metrolist.music.db.entities.Song
 import com.metrolist.music.db.entities.SpeedDialItem
 import com.metrolist.music.ui.component.BottomSheetState
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
 import com.metrolist.music.ui.component.ListDialog
 import com.metrolist.music.ui.component.Material3MenuGroup
 import com.metrolist.music.ui.component.Material3MenuItemData
@@ -758,7 +759,7 @@ fun TempoPitchDialog(onDismiss: () -> Unit) {
     val listenTogetherManager = com.metrolist.music.LocalListenTogetherManager.current
     val isInRoom = listenTogetherManager?.isInRoom ?: false
 
-    AlertDialog(
+    LiquidGlassAlertDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
         title = {
@@ -824,7 +825,7 @@ fun SpeedDialog(onDismiss: () -> Unit) {
     }
     val listenTogetherManager = com.metrolist.music.LocalListenTogetherManager.current
 
-    AlertDialog(
+    LiquidGlassAlertDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
         onDismissRequest = onDismiss,
         title = {

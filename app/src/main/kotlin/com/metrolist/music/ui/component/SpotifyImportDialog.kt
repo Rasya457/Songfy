@@ -44,7 +44,7 @@ fun SpotifyImportDialog(
     var totalCount by rememberSaveable { mutableIntStateOf(0) }
     var currentTrack by rememberSaveable { mutableStateOf("") }
 
-    AlertDialog(
+    LiquidGlassAlertDialog(
         onDismissRequest = {
             if (!isImporting) onDismiss()
         },

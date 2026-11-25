@@ -507,7 +507,7 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
+        val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.ON)
         val isSystemInDarkTheme = isSystemInDarkTheme()
         val useDarkTheme =
             remember(darkTheme, isSystemInDarkTheme) {
@@ -520,7 +520,7 @@ class MainActivity : FragmentActivity() {
 
         val enableLandscapeScaling by rememberPreference(EnableLandscapeScalingKey, defaultValue = false)
         val userDensityScale by rememberPreference(DensityScaleKey, defaultValue = 1f)
-        val pureBlackEnabled by rememberPreference(PureBlackKey, defaultValue = false)
+        val pureBlackEnabled by rememberPreference(PureBlackKey, defaultValue = true)
         val pureBlack =
             remember(pureBlackEnabled, useDarkTheme) {
                 pureBlackEnabled && useDarkTheme
@@ -774,10 +774,15 @@ class MainActivity : FragmentActivity() {
                 val playerReady by playerReadyState
                 val activePlayerConnection = if (playerReady) playerConnection else null
 
+                val isCustomHeaderRoute =
+                    navBackStackEntry?.destination?.route == Screens.Home.route ||
+                        navBackStackEntry?.destination?.route == Screens.Library.route
+
                 val playerAwareWindowInsets =
                     remember(
                         bottomInset,
                         shouldShowNavigationBar,
+                        isCustomHeaderRoute,
                         playerBottomSheetState.isDismissed,
                         showRail,
                     ) {
@@ -786,9 +791,10 @@ class MainActivity : FragmentActivity() {
                             bottom += NavigationBarHeight
                         }
                         if (!playerBottomSheetState.isDismissed) bottom += MiniPlayerHeight
+                        val topExtra = if (isCustomHeaderRoute) 4.dp else AppBarHeight + 12.dp
                         windowsInsets
                             .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
-                            .add(WindowInsets(top = AppBarHeight + 12.dp, bottom = bottom))
+                            .add(WindowInsets(top = topExtra, bottom = bottom))
                     }
                 val topAppBarScrollBehavior =
                     appBarScrollBehavior(
@@ -880,6 +886,8 @@ class MainActivity : FragmentActivity() {
                         currentRoute == Screens.ListenTogether.route ||
                             currentRoute == "listen_together_from_topbar"
                     shouldShowTopBar = currentRoute in topLevelScreens &&
+                        currentRoute != Screens.Home.route &&
+                        currentRoute != Screens.Library.route &&
                         currentRoute != "settings" &&
                         !(isListenTogetherScreen && listenTogetherInTopBar)
                 }
@@ -961,6 +969,7 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     Scaffold(
+                        containerColor = if (pureBlack) Color.Black else MaterialTheme.colorScheme.background,
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         topBar = {
                             AnimatedVisibility(
@@ -1174,6 +1183,8 @@ class MainActivity : FragmentActivity() {
                                 .nestedScroll(liquidNavState.nestedScrollConnection),
                     ) {
                         Row(Modifier.fillMaxSize().layerBackdrop(appBackdrop)) {
+                            // Prevent children inside appBackdrop from recursively calling drawBackdrop(appBackdrop)
+                            CompositionLocalProvider(LocalSongfyBackdrop provides null) {
                             val onRailItemClick: (Screens, Boolean) -> Unit =
                                 remember(navController, coroutineScope, topAppBarScrollBehavior, playerBottomSheetState) {
                                     { screen: Screens, isSelected: Boolean ->
@@ -1219,6 +1230,8 @@ class MainActivity : FragmentActivity() {
                             }
                             Box(Modifier.weight(1f)) {
                                 // NavHost with animations (Material 3 Expressive style)
+                                // Fluid Apple-style opaque transitions — zero black flash between screens
+                                val fluidEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -1233,10 +1246,15 @@ class MainActivity : FragmentActivity() {
 
                                         if (reducedMotion) {
                                             fadeIn(tween(120))
-                                        } else if (currentRouteIndex == -1 || currentRouteIndex > previousRouteIndex) {
-                                            slideInHorizontally { it / 8 } + fadeIn(tween(200))
+                                        } else if (currentRouteIndex == -1) {
+                                            // Sub-screens (Settings, Playlist, Album, etc.): full-opacity slide from right
+                                            slideInHorizontally(tween(280, easing = fluidEasing)) { it }
+                                        } else if (currentRouteIndex > previousRouteIndex) {
+                                            slideInHorizontally(tween(240, easing = fluidEasing)) { it / 6 } +
+                                                fadeIn(tween(180, easing = fluidEasing))
                                         } else {
-                                            slideInHorizontally { -it / 8 } + fadeIn(tween(200))
+                                            slideInHorizontally(tween(240, easing = fluidEasing)) { -it / 6 } +
+                                                fadeIn(tween(180, easing = fluidEasing))
                                         }
                                     },
                                     exitTransition = {
@@ -1245,10 +1263,15 @@ class MainActivity : FragmentActivity() {
 
                                         if (reducedMotion) {
                                             fadeOut(tween(120))
-                                        } else if (targetRouteIndex == -1 || targetRouteIndex > currentRouteIndex) {
-                                            slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
+                                        } else if (targetRouteIndex == -1) {
+                                            // Keep outgoing screen fully opaque while sub-screen slides over it
+                                            slideOutHorizontally(tween(280, easing = fluidEasing)) { -it / 5 }
+                                        } else if (targetRouteIndex > currentRouteIndex) {
+                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
+                                                fadeOut(tween(180, delayMillis = 60, easing = fluidEasing))
                                         } else {
-                                            slideOutHorizontally { it / 8 } + fadeOut(tween(200))
+                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
+                                                fadeOut(tween(180, delayMillis = 60, easing = fluidEasing))
                                         }
                                     },
                                     popEnterTransition = {
@@ -1257,10 +1280,15 @@ class MainActivity : FragmentActivity() {
 
                                         if (reducedMotion) {
                                             fadeIn(tween(120))
-                                        } else if (previousRouteIndex != -1 && previousRouteIndex < currentRouteIndex) {
-                                            slideInHorizontally { it / 8 } + fadeIn(tween(200))
+                                        } else if (previousRouteIndex == -1) {
+                                            // Returning from sub-screen: stay fully opaque while sub-screen slides away
+                                            slideInHorizontally(tween(260, easing = fluidEasing)) { -it / 5 }
+                                        } else if (previousRouteIndex < currentRouteIndex) {
+                                            slideInHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
+                                                fadeIn(tween(180, easing = fluidEasing))
                                         } else {
-                                            slideInHorizontally { -it / 8 } + fadeIn(tween(200))
+                                            slideInHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
+                                                fadeIn(tween(180, easing = fluidEasing))
                                         }
                                     },
                                     popExitTransition = {
@@ -1269,10 +1297,15 @@ class MainActivity : FragmentActivity() {
 
                                         if (reducedMotion) {
                                             fadeOut(tween(120))
-                                        } else if (currentRouteIndex != -1 && currentRouteIndex < targetRouteIndex) {
-                                            slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
+                                        } else if (currentRouteIndex == -1) {
+                                            // Sub-screen slides cleanly off to the right at full opacity
+                                            slideOutHorizontally(tween(260, easing = fluidEasing)) { it }
+                                        } else if (currentRouteIndex < targetRouteIndex) {
+                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
+                                                fadeOut(tween(180, delayMillis = 40, easing = fluidEasing))
                                         } else {
-                                            slideOutHorizontally { it / 8 } + fadeOut(tween(200))
+                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
+                                                fadeOut(tween(180, delayMillis = 40, easing = fluidEasing))
                                         }
                                     },
                                     // Scaffold already contains nestedScroll for liquidNavState, avoid duplicate dispatch
@@ -1284,6 +1317,7 @@ class MainActivity : FragmentActivity() {
                                         snackbarHostState = snackbarHostState,
                                     )
                                 }
+                            }
                             }
                         }
                     }

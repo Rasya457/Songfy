@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.metrolist.music.ui.utils.CoverBlurHelper
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -127,6 +128,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -201,6 +203,10 @@ import com.songfy.ui.icons.SongfyIcons
 import com.songfy.ui.icons.SongfyOutputKind
 import com.songfy.ui.icons.SongfyPlayerGlyph
 import com.songfy.ui.icons.rememberSongfyAudioOutputState
+import androidx.compose.runtime.CompositionLocalProvider
+import com.songfy.ui.LocalSongfyBackdrop
+import com.songfy.ui.backdrop.backdrops.layerBackdrop
+import com.songfy.ui.backdrop.backdrops.rememberLayerBackdrop
 import com.songfy.ui.lyrics.SongfySlidingPlayerDeck
 import com.songfy.ui.lyrics.rememberSongfyLyricsAutoHide
 import com.songfy.ui.lyrics.songfyTapToRevealControls
@@ -300,7 +306,7 @@ fun MornyeNowPlaying(
     var showShareLyricsSheet by remember { mutableStateOf(false) }
     val (providerOrder, onProviderOrderChange) = rememberPreference(LyricsProviderOrderKey, defaultValue = "")
     var keepScreenOn by rememberPreference(KeepScreenOn, false)
-    val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.BLUR)
     val playerButtonsStyle by rememberEnumPreference(PlayerButtonsStyleKey, PlayerButtonsStyle.DEFAULT)
     val sliderStyle by rememberEnumPreference(SliderStyleKey, SliderStyle.DEFAULT)
     val squigglySlider by rememberPreference(SquigglySliderKey, defaultValue = false)
@@ -655,19 +661,29 @@ fun MornyeNowPlaying(
         derivedStateOf { !(state.isClosingOrCollapsed && state.progress <= 0.90f) }
     }
 
+    // Do NOT drawRect(Color.Black) here: LayerBackdrop composites onDraw directly onto screen,
+    // which previously painted solid black over Home throughout the entire collapse animation.
+    val nowPlayingBackdrop = rememberLayerBackdrop()
+
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
     ) {
-        // ── Layer 1: Pure black base (fades smoothly out on collapse, in from start on expand) ──
+        val screenMaxHeight = maxHeight
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .layerBackdrop(nowPlayingBackdrop),
+        ) {
+        // ── Layer 1: Pure black base (fades out immediately on collapse so no black flash appears over Home) ──
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     val p = state.progress.coerceIn(0f, 1f)
                     alpha = if (state.isClosingOrCollapsed) {
-                        smoothstep(0.45f, 0.96f, p)
+                        smoothstep(0.82f, 0.99f, p)
                     } else {
-                        smoothstep(0.05f, 0.85f, p)
+                        smoothstep(0.35f, 0.90f, p)
                     }
                 }
                 .background(Color.Black),
@@ -805,7 +821,7 @@ fun MornyeNowPlaying(
                         scaleY = s
 
                         val targetCenterX = miniPlayerHorizontalPadding.toPx() + 28.dp.toPx()
-                        val targetCenterY = maxHeight.toPx() - miniPlayerBottomMargin.toPx() - miniPlayerHeight.toPx() / 2f
+                        val targetCenterY = screenMaxHeight.toPx() - miniPlayerBottomMargin.toPx() - miniPlayerHeight.toPx() / 2f
                         val pathProgress = if (state.isClosingOrCollapsed) {
                             collapseProgress
                         } else {
@@ -820,7 +836,12 @@ fun MornyeNowPlaying(
                         } else {
                             (p / 0.04f).coerceIn(0f, 1f)
                         }
-                        alpha = (1f - transitionProgress * 1.35f).coerceIn(0f, 1f) * morphFade
+                        // Reveal morphing cover during collapse even when exiting from Lyrics or Queue mode
+                        val collapseReveal = if (collapseProgress > 0.01f) {
+                            smoothstep(0.02f, 0.22f, collapseProgress)
+                        } else 0f
+                        val baseAlpha = maxOf((1f - transitionProgress * 1.35f).coerceIn(0f, 1f), collapseReveal)
+                        alpha = baseAlpha * morphFade
                         if (collapseProgress > 0.001f) {
                             val cropProgress = 1f - smoothstep(0.0f, 0.72f, p)
                             val cornerMix = smoothstep(0.0f, 0.85f, collapseProgress)
@@ -863,35 +884,111 @@ fun MornyeNowPlaying(
                     },
             ) {
             if (!hidePlayerThumbnail) {
-                var coverSwipeAccum by remember { mutableFloatStateOf(0f) }
+                val coverSwipeOffsetX = remember { Animatable(0f) }
                 AsyncImage(
                     model = coverImageRequest,
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            val offset = coverSwipeOffsetX.value
+                            val frac = (kotlin.math.abs(offset) / 360f).coerceIn(0f, 1f)
+                            translationX = offset
+                            val s = 1f - frac * 0.06f
+                            scaleX = s
+                            scaleY = s
+                            alpha = 1f - frac * 0.40f
+                            rotationZ = (offset / 360f) * 3.5f
+                        }
                         .let { base ->
                             if (swipeThumbnail && isPlayerMode) {
                                 base.pointerInput(layoutDirection, playerConnection) {
                                     detectHorizontalDragGestures(
-                                        onDragStart = { coverSwipeAccum = 0f },
+                                        onDragStart = {
+                                            coroutineScope.launch { coverSwipeOffsetX.stop() }
+                                        },
                                         onDragEnd = {
                                             val threshold = 110f
-                                            val directed = if (layoutDirection == LayoutDirection.Rtl) -coverSwipeAccum else coverSwipeAccum
-                                            if (directed < -threshold) {
-                                                playerConnection.player.seekToNext()
-                                            } else if (directed > threshold) {
-                                                playerConnection.player.seekToPrevious()
+                                            val currentOffset = coverSwipeOffsetX.value
+                                            val directed = if (layoutDirection == LayoutDirection.Rtl) -currentOffset else currentOffset
+                                            coroutineScope.launch {
+                                                if (directed < -threshold) {
+                                                    coverSwipeOffsetX.animateTo(
+                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) 380f else -380f,
+                                                        animationSpec = tween(durationMillis = 120),
+                                                    )
+                                                    playerConnection.player.seekToNext()
+                                                    coverSwipeOffsetX.snapTo(if (layoutDirection == LayoutDirection.Rtl) -200f else 200f)
+                                                    coverSwipeOffsetX.animateTo(
+                                                        targetValue = 0f,
+                                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
+                                                    )
+                                                } else if (directed > threshold) {
+                                                    coverSwipeOffsetX.animateTo(
+                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) -380f else 380f,
+                                                        animationSpec = tween(durationMillis = 120),
+                                                    )
+                                                    playerConnection.player.seekToPrevious()
+                                                    coverSwipeOffsetX.snapTo(if (layoutDirection == LayoutDirection.Rtl) 200f else -200f)
+                                                    coverSwipeOffsetX.animateTo(
+                                                        targetValue = 0f,
+                                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
+                                                    )
+                                                } else {
+                                                    coverSwipeOffsetX.animateTo(
+                                                        targetValue = 0f,
+                                                        animationSpec = spring(dampingRatio = 0.78f, stiffness = 450f),
+                                                    )
+                                                }
                                             }
-                                            coverSwipeAccum = 0f
                                         },
-                                        onDragCancel = { coverSwipeAccum = 0f },
-                                        onHorizontalDrag = { _, dragAmount -> coverSwipeAccum += dragAmount },
+                                        onDragCancel = {
+                                            coroutineScope.launch {
+                                                coverSwipeOffsetX.animateTo(
+                                                    targetValue = 0f,
+                                                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 450f),
+                                                )
+                                            }
+                                        },
+                                        onHorizontalDrag = { _, dragAmount ->
+                                            coroutineScope.launch {
+                                                coverSwipeOffsetX.snapTo(
+                                                    (coverSwipeOffsetX.value + dragAmount).coerceIn(-360f, 360f)
+                                                )
+                                            }
+                                        },
                                     )
                                 }
                             } else base
                         },
                 )
+                val swipeProgress = (kotlin.math.abs(coverSwipeOffsetX.value) / 110f).coerceIn(0f, 1f)
+                if (swipeProgress > 0.15f) {
+                    val isSwipingLeft = coverSwipeOffsetX.value < 0f
+                    Box(
+                        modifier = Modifier
+                            .align(if (isSwipingLeft) Alignment.CenterEnd else Alignment.CenterStart)
+                            .padding(horizontal = 12.dp)
+                            .size(36.dp)
+                            .graphicsLayer {
+                                alpha = swipeProgress
+                                val pillScale = 0.8f + 0.2f * swipeProgress
+                                scaleX = pillScale
+                                scaleY = pillScale
+                            }
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                            .border(0.75.dp, Color.White.copy(alpha = 0.28f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = if (isSwipingLeft) "»" else "«",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
                 if (showMotionVideo) {
                     motionArtworkUrl?.let { url ->
@@ -941,13 +1038,14 @@ fun MornyeNowPlaying(
                     } else {
                         smoothstep(0.36f, 0.98f, p)
                     }
-                    val s = 1f - (overlayAnimProgress * 0.035f)
+                    val collapseScale = 1f - ((1f - p) * 0.04f)
+                    val s = (1f - (overlayAnimProgress * 0.035f)) * collapseScale
                     scaleX = s
                     scaleY = s
                     translationY = if (state.isClosingOrCollapsed) {
-                        (1f - p) * 44.dp.toPx()
+                        (1f - p) * 64.dp.toPx()
                     } else {
-                        (1f - contentFade) * 28.dp.toPx()
+                        (1f - contentFade) * 36.dp.toPx()
                     }
                     alpha = (1f - (overlayAnimProgress * 0.20f)) * contentFade
                 },
@@ -994,7 +1092,17 @@ fun MornyeNowPlaying(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .then(
+                        if (!isPlayerMode) {
+                            // Absorb vertical drags in Lyrics/Queue body so only the top "Playing from" header can dismiss Now Playing
+                            Modifier.pointerInput(Unit) {
+                                detectVerticalDragGestures { _, _ -> }
+                            }
+                        } else {
+                            Modifier
+                        }
+                    ),
             ) {
                 // When in LYRICS or QUEUE mode: slides up smoothly from below (pulled upward)
                 if (transitionProgress > 0.01f) {
@@ -1112,7 +1220,6 @@ fun MornyeNowPlaying(
                                     isLoading = lrcText == null,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .nestedScroll(state.preUpPostDownNestedScrollConnection)
                                         .songfyTapToRevealControls(
                                             enabled = !lyricsAutoHide.controlsOpen && !isSelectingLyricsForShare,
                                             onReveal = lyricsAutoHide::reveal,
@@ -1239,7 +1346,7 @@ fun MornyeNowPlaying(
                                     playerConnection = playerConnection,
                                     shuffleModeEnabled = shuffleModeEnabled,
                                     repeatMode = repeatMode,
-                                    nestedScrollConnection = state.preUpPostDownNestedScrollConnection,
+                                    nestedScrollConnection = remember { object : NestedScrollConnection {} },
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -1362,16 +1469,23 @@ fun MornyeNowPlaying(
                         AnimatedContent(
                             targetState = previewText,
                             transitionSpec = {
-                                fadeIn(tween(300)) togetherWith fadeOut(tween(200))
+                                (androidx.compose.animation.slideInVertically(
+                                    tween(320, easing = FastOutSlowInEasing),
+                                ) { it / 2 } + fadeIn(tween(320))) togetherWith
+                                    (androidx.compose.animation.slideOutVertically(
+                                        tween(240, easing = FastOutSlowInEasing),
+                                    ) { -it / 2 } + fadeOut(tween(220)))
                             },
                             label = "lyricsPreview",
                         ) { text ->
                             Text(
                                 text = text,
-                                color = Color.White.copy(alpha = 0.78f),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
+                                color = Color.White.copy(alpha = 0.88f),
+                                fontSize = 17.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Start,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1439,6 +1553,7 @@ fun MornyeNowPlaying(
             }
         }
         }
+        }
 
         if (showSleepTimerDialog) {
             PlayerSleepTimerDialog(
@@ -1446,135 +1561,127 @@ fun MornyeNowPlaying(
             )
         }
 
-        if (castAnimProgress > 0.005f) {
-            CastAudioDialog(
-                animProgress = castAnimProgress,
-                onDismiss = { showCastDialog = false },
-            )
-        }
+        CompositionLocalProvider(LocalSongfyBackdrop provides nowPlayingBackdrop) {
+            if (castAnimProgress > 0.005f) {
+                CastAudioDialog(
+                    animProgress = castAnimProgress,
+                    onDismiss = { showCastDialog = false },
+                )
+            }
 
-        if (showLyricsOffsetDialog) {
-            LyricsOffsetDialog(
-                initialOffsetMs = lyricsOffset,
-                onDismiss = { showLyricsOffsetDialog = false },
-                onSaveOffset = { newOffset ->
-                    currentSong?.song?.let { song ->
-                        coroutineScope.launch(Dispatchers.IO) {
-                            database.query {
-                                update(song.copy(lyricsOffset = newOffset))
-                            }
-                        }
-                    }
-                },
-            )
-        }
-
-        // Floating 3-dots Menu Popover with smooth scale/fade & screen blur
-        if (menuAnimProgress > 0.005f && mediaMetadata != null) {
-            val meta = mediaMetadata!!
-            val isDownloaded = download?.state == Download.STATE_COMPLETED
-            val isCached = currentSong?.song?.dateDownload != null || runCatching {
-                playerConnection.service.playerCache.isCached(meta.id, 0, 1024)
-            }.getOrDefault(false)
-            val isLocal = currentSong?.song?.isLocal == true
-
-            SongOptionsMenu(
-                albumName = meta.album?.title ?: meta.title,
-                artistName = meta.artists.joinToString { it.name }.takeIf { it.isNotBlank() } ?: "Unknown Artist",
-                animProgress = menuAnimProgress,
-                isLyricsOrQueueMode = !isPlayerMode,
-                isCached = isCached,
-                isDownloaded = isDownloaded,
-                isLocal = isLocal,
-                keepScreenOn = keepScreenOn,
-                onDismiss = { showSongOptionsMenu = false },
-                onAction = { action ->
-                    showSongOptionsMenu = false
-                    when (action) {
-                        "share" -> {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, com.metrolist.music.utils.SongfyLinks.watchUrl(meta.id))
-                            }
-                            context.startActivity(Intent.createChooser(intent, null))
-                        }
-                        "upgrade" -> {
-                            bottomSheetPageState.show { ShowMediaInfo(meta.id) }
-                        }
-                        "info" -> {
-                            bottomSheetPageState.show { ShowMediaInfo(meta.id) }
-                        }
-                        "playlist" -> {
-                            showChoosePlaylistDialog = true
-                        }
-                        "video" -> {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/watch?v=${meta.id}"))
-                            context.startActivity(intent)
-                        }
-                        "radio" -> {
-                            Toast.makeText(context, context.getString(R.string.starting_radio), Toast.LENGTH_SHORT).show()
-                            playerConnection.startRadioSeamlessly()
-                        }
-                        "play_next" -> {
-                            playerConnection.playNext(meta.toMediaItem())
-                            Toast.makeText(context, "Playing next", Toast.LENGTH_SHORT).show()
-                        }
-                        "queue" -> {
-                            playerConnection.addToQueue(meta.toMediaItem())
-                            Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
-                        }
-                        "download" -> {
-                            downloadUtil.download(meta)
-                        }
-                        "remove_download" -> {
-                            DownloadService.sendRemoveDownload(
-                                context,
-                                ExoDownloadService::class.java,
-                                meta.id,
-                                false,
-                            )
-                        }
-                        "remove_cache" -> {
-                            runCatching {
-                                playerConnection.service.playerCache.removeResource(meta.id)
-                            }
+            if (showLyricsOffsetDialog) {
+                LyricsOffsetDialog(
+                    initialOffsetMs = lyricsOffset,
+                    onDismiss = { showLyricsOffsetDialog = false },
+                    onSaveOffset = { newOffset ->
+                        currentSong?.song?.let { song ->
                             coroutineScope.launch(Dispatchers.IO) {
                                 database.query {
-                                    getSongByIdBlocking(meta.id)?.let { update(it.song.copy(dateDownload = null)) }
+                                    update(song.copy(lyricsOffset = newOffset))
                                 }
                             }
-                            Toast.makeText(context, "Removed from cache", Toast.LENGTH_SHORT).show()
                         }
-                        "album" -> {
-                            meta.album?.let { album ->
-                                navController.navigate("album/${album.id}")
-                                state.collapseSoft()
+                    },
+                )
+            }
+
+            // Floating 3-dots Menu Popover with Liquid Glass & screen blur
+            if (menuAnimProgress > 0.005f && mediaMetadata != null) {
+                val meta = mediaMetadata!!
+                val isDownloaded = download?.state == Download.STATE_COMPLETED
+                val isCached = currentSong?.song?.dateDownload != null || runCatching {
+                    playerConnection.service.playerCache.isCached(meta.id, 0, 1024)
+                }.getOrDefault(false)
+                val isLocal = currentSong?.song?.isLocal == true
+
+                SongOptionsMenu(
+                    albumName = meta.album?.title ?: meta.title,
+                    artistName = meta.artists.joinToString { it.name }.takeIf { it.isNotBlank() } ?: "Unknown Artist",
+                    animProgress = menuAnimProgress,
+                    isLyricsOrQueueMode = !isPlayerMode,
+                    isCached = isCached,
+                    isDownloaded = isDownloaded,
+                    isLocal = isLocal,
+                    keepScreenOn = keepScreenOn,
+                    onDismiss = { showSongOptionsMenu = false },
+                    onAction = { action ->
+                        showSongOptionsMenu = false
+                        when (action) {
+                            "share" -> {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, com.metrolist.music.utils.SongfyLinks.watchUrl(meta.id))
+                                }
+                                context.startActivity(Intent.createChooser(intent, null))
+                            }
+                            "info" -> {
+                                bottomSheetPageState.show { ShowMediaInfo(meta.id) }
+                            }
+                            "playlist" -> {
+                                showChoosePlaylistDialog = true
+                            }
+                            "play_next" -> {
+                                playerConnection.playNext(meta.toMediaItem())
+                                Toast.makeText(context, "Playing next", Toast.LENGTH_SHORT).show()
+                            }
+                            "queue" -> {
+                                playerConnection.addToQueue(meta.toMediaItem())
+                                Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
+                            }
+                            "download" -> {
+                                downloadUtil.download(meta)
+                                Toast.makeText(context, "Downloading...", Toast.LENGTH_SHORT).show()
+                            }
+                            "remove_download" -> {
+                                DownloadService.sendRemoveDownload(
+                                    context,
+                                    ExoDownloadService::class.java,
+                                    meta.id,
+                                    false,
+                                )
+                            }
+                            "remove_cache" -> {
+                                runCatching {
+                                    playerConnection.service.playerCache.removeResource(meta.id)
+                                }
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    database.query {
+                                        getSongByIdBlocking(meta.id)?.let { update(it.song.copy(dateDownload = null)) }
+                                    }
+                                }
+                                Toast.makeText(context, "Removed from cache", Toast.LENGTH_SHORT).show()
+                            }
+                            "album" -> {
+                                val albumId = meta.album?.id
+                                if (!albumId.isNullOrBlank()) {
+                                    navController.navigate("album/$albumId")
+                                    state.collapseSoft()
+                                } else {
+                                    Toast.makeText(context, "Album tidak tersedia", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            "artist" -> {
+                                val artistId = meta.artists.firstOrNull()?.id
+                                if (!artistId.isNullOrBlank()) {
+                                    navController.navigate("artist/$artistId")
+                                    state.collapseSoft()
+                                } else {
+                                    Toast.makeText(context, "Artis tidak tersedia", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            "sleep" -> {
+                                showSleepTimerDialog = true
+                            }
+                            "keep_screen_on" -> {
+                                keepScreenOn = !keepScreenOn
+                            }
+                            "lyrics_offset" -> {
+                                showLyricsOffsetDialog = true
                             }
                         }
-                        "artist" -> {
-                            meta.artists.firstOrNull()?.let { artist ->
-                                navController.navigate("artist/${artist.id}")
-                                state.collapseSoft()
-                            }
-                        }
-                        "sleep" -> {
-                            showSleepTimerDialog = true
-                        }
-                        "keep_screen_on" -> {
-                            keepScreenOn = !keepScreenOn
-                        }
-                        "lyrics_offset" -> {
-                            showLyricsOffsetDialog = true
-                        }
-                        "copy_log" -> {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val log = "Title: ${meta.title}\nArtist: ${meta.artists.joinToString { it.name }}\nID: ${meta.id}\nDuration: ${durationMs}ms\nFormat: $audioInfo\nBitrate: ${currentFormat?.bitrate ?: 0}"
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Song Log", log))
-                            Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
 
         if (showShareLyricsSheet && selectedLyricIndices.isNotEmpty()) {

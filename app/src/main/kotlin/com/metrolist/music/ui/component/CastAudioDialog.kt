@@ -21,7 +21,9 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +68,7 @@ import com.metrolist.music.R
 import com.songfy.ui.icons.SongfyIcons
 import com.songfy.ui.icons.SongfyOutputKind
 import com.songfy.ui.icons.rememberSongfyAudioOutputState
+import com.songfy.ui.songfyLiquidGlass
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +103,9 @@ fun CastAudioDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = scrimAlpha))
+            .pointerInput(Unit) {
+                detectVerticalDragGestures { _, _ -> }
+            }
             .clickable(
                 interactionSource = scrimInteractionSource,
                 indication = null,
@@ -115,15 +121,11 @@ fun CastAudioDialog(
                     scaleY = scale
                     this.alpha = alpha
                 }
-                .shadow(
-                    elevation = 24.dp,
+                .songfyLiquidGlass(
+                    dark = true,
+                    shadowElevation = 24.dp,
                     shape = RoundedCornerShape(28.dp),
-                    ambientColor = Color.Black.copy(alpha = 0.40f),
-                    spotColor = Color.Black.copy(alpha = 0.40f),
                 )
-                .clip(RoundedCornerShape(28.dp))
-                .background(Color(0xFF1C1C1E))
-                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

@@ -243,14 +243,8 @@ fun SettingsScreen(
                         SettingsRow(
                             icon = painterResource(R.drawable.language),
                             title = stringResource(R.string.content),
-                            showDivider = true,
-                            onClick = { navController.navigate("settings/content") },
-                        )
-                        SettingsRow(
-                            icon = painterResource(R.drawable.translate),
-                            title = stringResource(R.string.ai_lyrics_translation),
                             showDivider = false,
-                            onClick = { navController.navigate("settings/ai") },
+                            onClick = { navController.navigate("settings/content") },
                         )
                     }
 

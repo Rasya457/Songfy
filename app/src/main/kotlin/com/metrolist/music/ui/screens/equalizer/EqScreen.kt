@@ -46,6 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.LocalNavController
+import androidx.compose.ui.graphics.Color
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
+import com.metrolist.music.ui.component.LiquidGlassDropdownMenu
+import com.songfy.ui.isSongfyDarkTheme
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
 import com.metrolist.music.eq.data.SavedEQProfile
@@ -134,7 +138,7 @@ fun EqScreen(
 
     // Error dialog
     if (showError != null) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showError = null },
             title = {
                 Text(stringResource(R.string.import_error_title))
@@ -152,7 +156,7 @@ fun EqScreen(
 
     // Error dialog for apply failure
     if (state.error != null) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { viewModel.clearError() },
             title = {
                 Text(stringResource(R.string.error_title))
@@ -204,7 +208,7 @@ private fun EqScreenContent(
                                 contentDescription = stringResource(R.string.import_profile)
                             )
                         }
-                        DropdownMenu(
+                        LiquidGlassDropdownMenu(
                             expanded = showAddMenu,
                             onDismissRequest = onAddMenuDismissed
                         ) {
@@ -381,7 +385,7 @@ private fun EQProfileItem(
 
     // Delete confirmation dialog
     if (showDeleteDialog) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.delete_profile_desc)) },
             text = {

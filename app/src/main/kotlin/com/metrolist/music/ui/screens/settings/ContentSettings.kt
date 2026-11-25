@@ -58,6 +58,7 @@ import androidx.core.net.toUri
 import androidx.navigation.NavController
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerAwareWindowInsets
+import com.metrolist.music.ui.component.LiquidGlassAlertDialog
 import com.metrolist.music.R
 import com.metrolist.music.constants.AddToPlaylistPosition
 import com.metrolist.music.constants.AddToPlaylistPositionKey
@@ -204,7 +205,7 @@ fun ContentSettings(
         var tempProxyPassword by rememberSaveable { mutableStateOf(proxyPassword) }
         var authEnabled by rememberSaveable { mutableStateOf(proxyUsername.isNotBlank() || proxyPassword.isNotBlank()) }
 
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showProxyConfigurationDialog = false },
             title = {
                 Text(stringResource(R.string.config_proxy))
@@ -379,7 +380,7 @@ fun ContentSettings(
     }
 
     if (showProviderSelectionDialog) {
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showProviderSelectionDialog = false },
             title = { Text(stringResource(R.string.lyrics_provider_selection)) },
             text = {
@@ -659,7 +660,7 @@ fun ContentSettings(
     if (showTopLengthDialog) {
         var tempLength by rememberSaveable { mutableFloatStateOf(lengthTop.toFloat()) }
 
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showTopLengthDialog = false },
             title = { Text(stringResource(R.string.top_length)) },
             text = {
@@ -730,7 +731,7 @@ fun ContentSettings(
             )
         }
 
-        AlertDialog(
+        LiquidGlassAlertDialog(
             onDismissRequest = { showProviderPriorityDialog = false },
             title = { Text(stringResource(R.string.lyrics_provider_priority)) },
             text = {

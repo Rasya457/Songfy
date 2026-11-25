@@ -57,6 +57,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.graphics.Color
+import com.songfy.ui.isSongfyDarkTheme
+import com.songfy.ui.songfyGlassContainer
 import com.metrolist.music.LocalNavController
 import com.metrolist.music.R
 import kotlinx.coroutines.delay
@@ -71,65 +75,100 @@ fun DefaultDialog(
     horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val isDark = isSongfyDarkTheme()
+    val dialogShape = RoundedCornerShape(28.dp)
+    val contentColor = if (isDark) Color.White else Color(0xFF111318)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(
-            modifier = Modifier.padding(24.dp),
-            shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
-            tonalElevation = AlertDialogDefaults.TonalElevation,
+        Box(
+            modifier = Modifier
+                .padding(24.dp)
+                .widthIn(min = 280.dp, max = 520.dp)
+                .songfyGlassContainer(dark = isDark, shape = dialogShape),
         ) {
-            Column(
-                horizontalAlignment = horizontalAlignment,
-                modifier =
-                    modifier
-                        .padding(24.dp),
-            ) {
-                if (icon != null) {
-                    CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.iconContentColor) {
-                        Box(
-                            Modifier.align(Alignment.CenterHorizontally),
-                        ) {
-                            icon()
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                }
-                if (title != null) {
-                    CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.titleContentColor) {
-                        ProvideTextStyle(MaterialTheme.typography.headlineSmall) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                Column(
+                    horizontalAlignment = horizontalAlignment,
+                    modifier = modifier.padding(24.dp),
+                ) {
+                    if (icon != null) {
+                        CompositionLocalProvider(LocalContentColor provides contentColor.copy(alpha = 0.90f)) {
                             Box(
-                                // Align the title to the center when an icon is present.
-                                Modifier.align(if (icon == null) Alignment.Start else Alignment.CenterHorizontally),
+                                Modifier.align(Alignment.CenterHorizontally),
                             ) {
-                                title()
+                                icon()
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                    }
+                    if (title != null) {
+                        CompositionLocalProvider(LocalContentColor provides contentColor) {
+                            ProvideTextStyle(MaterialTheme.typography.headlineSmall) {
+                                Box(
+                                    // Align the title to the center when an icon is present.
+                                    Modifier.align(if (icon == null) Alignment.Start else Alignment.CenterHorizontally),
+                                ) {
+                                    title()
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    content()
+
+                    if (buttons != null) {
+                        Spacer(Modifier.height(24.dp))
+
+                        FlowRow(
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
+                                ProvideTextStyle(
+                                    value = MaterialTheme.typography.labelLarge,
+                                ) {
+                                    buttons()
+                                }
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(16.dp))
                 }
+            }
+        }
+    }
+}
 
-                content()
-
-                if (buttons != null) {
-                    Spacer(Modifier.height(24.dp))
-
-                    FlowRow(
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) {
-                            ProvideTextStyle(
-                                value = MaterialTheme.typography.labelLarge,
-                            ) {
-                                buttons()
-                            }
-                        }
-                    }
-                }
+@Composable
+fun LiquidGlassAlertDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    icon: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false),
+) {
+    DefaultDialog(
+        onDismiss = onDismissRequest,
+        modifier = modifier,
+        icon = icon,
+        title = title,
+        horizontalAlignment = Alignment.Start,
+        buttons = {
+            if (dismissButton != null) {
+                dismissButton()
+            }
+            confirmButton()
+        },
+    ) {
+        if (text != null) {
+            ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+                text()
             }
         }
     }
@@ -194,29 +233,60 @@ fun ActionPromptDialog(
 }
 
 @Composable
+fun LiquidGlassDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    properties: androidx.compose.ui.window.PopupProperties = androidx.compose.ui.window.PopupProperties(focusable = true),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val isDark = isSongfyDarkTheme()
+    androidx.compose.material3.DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        properties = properties,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = if (isDark) Color(0xCC16181F) else Color(0xDCF6F7FA),
+        tonalElevation = 0.dp,
+        shadowElevation = 16.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            0.75.dp,
+            if (isDark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.08f),
+        ),
+        content = content,
+    )
+}
+
+@Composable
 fun ListDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit,
 ) {
+    val isDark = isSongfyDarkTheme()
+    val dialogShape = RoundedCornerShape(28.dp)
+    val contentColor = if (isDark) Color.White else Color(0xFF111318)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(
-            modifier = Modifier.padding(24.dp),
-            shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
-            tonalElevation = AlertDialogDefaults.TonalElevation,
+        Box(
+            modifier = Modifier
+                .padding(24.dp)
+                .widthIn(min = 280.dp, max = 520.dp)
+                .songfyGlassContainer(dark = isDark, shape = dialogShape),
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier =
-                    modifier
-                        .padding(vertical = 24.dp)
-                        .imePadding(),
-            ) {
-                LazyColumn(content = content)
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier =
+                        modifier
+                            .padding(vertical = 24.dp)
+                            .imePadding(),
+                ) {
+                    LazyColumn(content = content)
+                }
             }
         }
     }

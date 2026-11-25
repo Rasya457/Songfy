@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.songfy.ui.isSongfyDarkTheme
+import com.songfy.ui.songfyGlassContainer
 
 val LocalMenuState = compositionLocalOf { MenuState() }
 
@@ -99,21 +102,40 @@ fun AnimatedBottomSheet(
         return
     }
 
+    val isDark = isSongfyDarkTheme()
+    val glassShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    val glassContentColor = if (isDark) Color.White else Color(0xFF111318)
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         sheetState = sheetState,
         sheetMaxWidth = sheetMaxWidth,
-        shape = shape,
-        containerColor = containerColor,
-        contentColor = contentColor,
-        tonalElevation = tonalElevation,
+        shape = glassShape,
+        containerColor = Color.Transparent,
+        contentColor = glassContentColor,
+        tonalElevation = 0.dp,
         scrimColor = scrimColor,
-        dragHandle = dragHandle,
+        dragHandle = null,
         contentWindowInsets = contentWindowInsets,
         properties = properties,
-        content = lastContent,
-    )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .songfyGlassContainer(dark = isDark, shape = glassShape),
+        ) {
+            if (dragHandle != null) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    dragHandle()
+                }
+            }
+            lastContent()
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -144,7 +166,7 @@ fun BottomSheetMenu(
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             )
         },
-        modifier = modifier.fillMaxHeight()
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier

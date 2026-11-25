@@ -27,6 +27,8 @@ import com.metrolist.music.utils.get
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -75,13 +77,34 @@ class OnlineSearchSuggestionViewModel
                                         )
                                     }
                             } else {
-                                val result = YouTube.searchSuggestions(query).getOrNull()
+                                val (result, songSearchResult) = coroutineScope {
+                                    val suggestionsDeferred = async { YouTube.searchSuggestions(query).getOrNull() }
+                                    val songsDeferred = async {
+                                        if (query.trim().length >= 2) {
+                                            YouTube.search(
+                                                query = query,
+                                                filter = YouTube.SearchFilter.FILTER_SONG,
+                                                recordSearchHistory = false,
+                                            ).getOrNull()
+                                        } else {
+                                            null
+                                        }
+                                    }
+                                    suggestionsDeferred.await() to songsDeferred.await()
+                                }
                                 val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                                 val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
+                                val combinedItems = (
+                                    result?.recommendedItems.orEmpty() +
+                                        songSearchResult?.items.orEmpty().take(12)
+                                )
+                                    .distinctBy { it.id }
+                                    .filterExplicit(hideExplicit)
+                                    .filterVideoSongs(hideVideoSongs)
 
                                 database
                                     .searchHistory(query)
-                                    .map { it.take(3) }
+                                    .map { it.take(2) }
                                     .map { history ->
                                         SearchSuggestionViewState(
                                             history = history,
@@ -90,14 +113,10 @@ class OnlineSearchSuggestionViewModel
                                                     ?.queries
                                                     ?.filter { suggestionQuery ->
                                                         history.none { it.query == suggestionQuery }
-                                                    }.orEmpty(),
-                                            items =
-                                                result
-                                                    ?.recommendedItems
-                                                    ?.distinctBy { it.id }
-                                                    ?.filterExplicit(hideExplicit)
-                                                    ?.filterVideoSongs(hideVideoSongs)
+                                                    }
+                                                    ?.take(4)
                                                     .orEmpty(),
+                                            items = combinedItems,
                                         )
                                     }
                             }

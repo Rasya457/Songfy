@@ -111,7 +111,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.palette.graphics.Palette
-import coil3.ImageLoader
+import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
@@ -1983,7 +1983,7 @@ fun OriginalLyrics(
                 if (coverUrl != null) {
                     withContext(Dispatchers.IO) {
                         try {
-                            val loader = ImageLoader(context)
+                            val loader = context.imageLoader
                             val req =
                                 ImageRequest
                                     .Builder(context)

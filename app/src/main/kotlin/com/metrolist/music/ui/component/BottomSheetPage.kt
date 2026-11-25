@@ -80,7 +80,7 @@ fun BottomSheetPage(
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
             )
         },
-        modifier = modifier.fillMaxHeight()
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier

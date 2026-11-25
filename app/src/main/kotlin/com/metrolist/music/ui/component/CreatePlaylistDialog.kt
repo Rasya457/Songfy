@@ -76,51 +76,5 @@ fun CreatePlaylistDialog(
                 onPlaylistCreated?.invoke(playlistId)
             }
         },
-        extraContent = {
-            if (allowSyncing) {
-                Row(
-                    modifier = Modifier.padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.sync_playlist),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = stringResource(R.string.allows_for_sync_witch_youtube),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        modifier = Modifier.padding(start = 12.dp),
-                        checked = syncedPlaylist,
-                        onCheckedChange = {
-                            coroutineScope.launch {
-                                val isYtmSyncEnabled = withContext(Dispatchers.IO) { context.isSyncEnabled() }
-                                if (!isSignedIn && !syncedPlaylist) {
-                                    Toast
-                                        .makeText(
-                                            context,
-                                            notLoggedInYoutubeStr,
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                } else if (!isYtmSyncEnabled) {
-                                    Toast
-                                        .makeText(
-                                            context,
-                                            syncDisabledStr,
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                } else {
-                                    syncedPlaylist = !syncedPlaylist
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-        },
     )
 }

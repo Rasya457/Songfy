@@ -73,7 +73,7 @@ fun SongSelectDropdown(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        DropdownMenu(
+        LiquidGlassDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier.width(with(density) { textFieldWidthPx.toDp() }),

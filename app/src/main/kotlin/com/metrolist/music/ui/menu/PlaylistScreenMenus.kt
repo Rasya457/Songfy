@@ -143,26 +143,6 @@ fun LocalPlaylistMenu(
                 ),
             )
 
-            // Show sync button only for YouTube playlists
-            if (isYouTubePlaylist) {
-                add(
-                    Material3MenuItemData(
-                        title = { Text(stringResource(R.string.action_sync)) },
-                        description = { Text(stringResource(R.string.sync_playlist_desc)) },
-                        icon = {
-                            Icon(
-                                painter = painterResource(R.drawable.sync),
-                                contentDescription = null,
-                            )
-                        },
-                        onClick = {
-                            onSync()
-                            onDismiss()
-                        },
-                    ),
-                )
-            }
-
             if (!isGuest) {
                 add(
                     Material3MenuItemData(
