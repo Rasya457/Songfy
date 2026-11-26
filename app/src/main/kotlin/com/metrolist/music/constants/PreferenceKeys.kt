@@ -154,6 +154,7 @@ val CrossfadeEnabledKey = booleanPreferencesKey("crossfadeEnabled")
 val CrossfadeDurationKey = floatPreferencesKey("crossfadeDurationFloat")
 val CrossfadeGaplessKey = booleanPreferencesKey("crossfadeGapless")
 val LockScreenLyricsKey = booleanPreferencesKey("lockScreenLyrics")
+val LiquidGlassEnabledKey = booleanPreferencesKey("liquidGlassEnabled")
 
 val MaxImageCacheSizeKey = intPreferencesKey("maxImageCacheSize")
 val MaxSongCacheSizeKey = intPreferencesKey("maxSongCacheSize")

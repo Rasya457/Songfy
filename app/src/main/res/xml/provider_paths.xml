@@ -12,4 +12,7 @@
     <external-files-path
         name="external_files_documents"
         path="Documents/SongfyExports/" />
+    <files-path
+        name="playlist_covers"
+        path="playlist_covers/" />
 </paths>

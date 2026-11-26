@@ -197,7 +197,8 @@ fun SyncedLyricsView(
     val nestedScrollConnection = remember(listState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                if (source == NestedScrollSource.UserInput && abs(available.y) > 0.5f) {
+                    isAutoFollowing = false
                     currentOnScrollUp.value?.invoke()
                 }
                 return Offset.Zero
@@ -205,13 +206,13 @@ fun SyncedLyricsView(
         }
     }
 
-    // Pause auto-follow on genuine user drag/fling, including drags that begin mid-programmatic scroll.
+    // Pause auto-follow only on genuine user drag/fling, never on interrupted programmatic scrolls.
     LaunchedEffect(listState) {
         var wasUserScrolling = false
         snapshotFlow { listState.isScrollInProgress to userTouching }
             .distinctUntilChanged()
             .collect { (scrolling, touching) ->
-                if (scrolling && (!isProgrammaticScroll || touching)) {
+                if (scrolling && touching) {
                     isAutoFollowing = false
                     wasUserScrolling = true
                     currentOnScrollUp.value?.invoke()
@@ -232,7 +233,7 @@ fun SyncedLyricsView(
     // Center active lyric line on line changes, translation toggles, and when auto-follow resumes.
     LaunchedEffect(lines, activeIndex, isAutoFollowing, lyricsScroll, showTranslation, translations, isSelectionMode) {
         if (isSelectionMode || !lyricsScroll || !isAutoFollowing || activeIndex !in lines.indices) return@LaunchedEffect
-        if (listState.isScrollInProgress && !isProgrammaticScroll) return@LaunchedEffect
+        if (userTouching) return@LaunchedEffect
         isProgrammaticScroll = true
         try {
             val activeItem = listState.layoutInfo.visibleItemsInfo
@@ -264,9 +265,6 @@ fun SyncedLyricsView(
             }
         } finally {
             isProgrammaticScroll = false
-            if (userTouching || listState.isScrollInProgress) {
-                isAutoFollowing = false
-            }
         }
     }
 

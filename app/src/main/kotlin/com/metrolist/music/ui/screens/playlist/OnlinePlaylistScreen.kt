@@ -451,6 +451,7 @@ fun OnlinePlaylistScreen(
 
         CompositionLocalProvider(LocalSongfyBackdrop provides playlistBackdrop) {
             PlaylistFloatingTopBar(
+                modifier = Modifier.align(Alignment.TopCenter),
                 title = playlist?.title ?: "",
                 showTitle = lazyListState.firstVisibleItemIndex > 0,
                 inSelectMode = inSelectMode,

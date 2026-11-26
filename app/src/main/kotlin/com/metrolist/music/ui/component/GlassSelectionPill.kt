@@ -527,6 +527,7 @@ internal fun GlassSelectionPill(
     tabRow: LayerBackdrop,
     modifier: Modifier,
 ) {
+    if (!com.songfy.ui.LocalSongfyLiquidGlassEnabled.current) return
     val page = LocalSongfyBackdrop.current ?: return
     val shape = remember { RoundedCornerShape(percent = 50) }
         val backdrop = remember(page, barGlass, tabRow, fillColor) {

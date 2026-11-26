@@ -154,6 +154,11 @@ fun AppearanceSettings(
             EnableLandscapeScalingKey,
             defaultValue = false,
         )
+    val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
+        rememberPreference(
+            com.metrolist.music.constants.LiquidGlassEnabledKey,
+            defaultValue = true,
+        )
     val (selectedThemeColorInt) =
         rememberPreference(
             SelectedThemeColorKey,
@@ -998,6 +1003,42 @@ fun AppearanceSettings(
                                 )
                             },
                             onClick = { onEnableLandscapeScalingChange(!enableLandscapeScaling) },
+                        ),
+                    )
+                    val liquidGlassSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    add(
+                        Material3SettingsItem(
+                            icon = painterResource(R.drawable.contrast),
+                            title = { Text(stringResource(R.string.liquid_glass_effect)) },
+                            description = {
+                                Text(
+                                    stringResource(
+                                        if (liquidGlassSupported) R.string.liquid_glass_effect_desc
+                                        else R.string.liquid_glass_requires_android_12,
+                                    ),
+                                )
+                            },
+                            enabled = liquidGlassSupported,
+                            trailingContent = {
+                                Switch(
+                                    checked = liquidGlassSupported && liquidGlassEnabled,
+                                    enabled = liquidGlassSupported,
+                                    onCheckedChange = onLiquidGlassEnabledChange,
+                                    thumbContent = {
+                                        Icon(
+                                            painter =
+                                                painterResource(
+                                                    id = if (liquidGlassSupported && liquidGlassEnabled) R.drawable.check else R.drawable.close,
+                                                ),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                                        )
+                                    },
+                                )
+                            },
+                            onClick = if (liquidGlassSupported) {
+                                { onLiquidGlassEnabledChange(!liquidGlassEnabled) }
+                            } else null,
                         ),
                     )
                     // Only show dynamic theme option when using the default/dynamic color

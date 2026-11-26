@@ -51,6 +51,7 @@ object LrcParser {
     private val lineTag = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
     private val wordTag = Regex("""<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>""")
     private val offsetTag = Regex("""^\[offset:\s*([+-]?\d+)\s*]""", RegexOption.IGNORE_CASE)
+    private val metadataTag = Regex("""\{(?:agent:[^}]+|bg)\}|\[bg:[^\]]*]""", RegexOption.IGNORE_CASE)
 
     private fun toMs(m: MatchResult): Long {
         val (min, sec, frac) = m.destructured
@@ -80,7 +81,7 @@ object LrcParser {
             }
             if (starts.isEmpty()) continue
 
-            val body = trimmed.substring(pos).trim()
+            val body = trimmed.substring(pos).replace(metadataTag, "").trim()
             starts.forEach { rows += (it - offset).coerceAtLeast(0L) to body }
         }
 

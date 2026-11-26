@@ -227,6 +227,9 @@ fun LocalPlaylistMenu(
         }
 
     Material3MenuGroup(items = menuItems)
+    androidx.compose.foundation.layout.Spacer(
+        modifier = Modifier.padding(bottom = 24.dp),
+    )
 
     if (showExportDialog) {
         ExportDialog(

@@ -1009,5 +1009,8 @@
     <string name="search_settings">Search settings</string>
     <string name="search_hint_online">Artists, songs, lyrics, and more</string>
     <string name="search_hint_online_id">Artis, lagu, lirik, dan lainnya</string>
+    <string name="liquid_glass_effect">Liquid Glass</string>
+    <string name="liquid_glass_effect_desc">Use translucent glass blur and lens refraction effects (turn off for solid surfaces and better battery life)</string>
+    <string name="liquid_glass_requires_android_12">Requires Android 12 or higher</string>
 </resources>
 

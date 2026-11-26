@@ -60,6 +60,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
+            android:screenOrientation="portrait"
             android:showWhenLocked="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Metrolist"

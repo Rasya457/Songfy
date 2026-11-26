@@ -23,8 +23,7 @@ import androidx.compose.material3.ModalBottomSheetDefaults
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.contentColorFor
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.rememberBottomSheetState as rememberMaterialBottomSheetState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -70,7 +69,7 @@ fun AnimatedBottomSheet(
     isVisible: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    sheetState: SheetState = rememberMaterialBottomSheetState(initialValue = SheetValue.Hidden),
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     sheetMaxWidth: Dp = BottomSheetDefaults.SheetMaxWidth,
     shape: Shape = BottomSheetDefaults.ExpandedShape,
     containerColor: Color = BottomSheetDefaults.ContainerColor,
@@ -83,11 +82,8 @@ fun AnimatedBottomSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var lastContent by remember { mutableStateOf(content) }
-
-    LaunchedEffect(content) {
-        if (isVisible) {
-            lastContent = content
-        }
+    if (isVisible) {
+        lastContent = content
     }
 
     LaunchedEffect(isVisible) {
@@ -146,7 +142,7 @@ fun BottomSheetMenu(
     background: Color = MaterialTheme.colorScheme.surface,
 ) {
     val focusManager = LocalFocusManager.current
-    val sheetState = rememberMaterialBottomSheetState(initialValue = SheetValue.Hidden)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     AnimatedBottomSheet(
         isVisible = state.isVisible,

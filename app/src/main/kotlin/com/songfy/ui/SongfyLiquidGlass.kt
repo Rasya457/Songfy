@@ -132,6 +132,7 @@ fun rememberHighContrast(): Boolean {
  *   - prefers-contrast: latar belakang solid (1.0f) dengan border tegas berbobot 1.5dp.
  */
 val LocalSongfyBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+val LocalSongfyLiquidGlassEnabled = staticCompositionLocalOf { true }
 private val DefaultGlassHighlight: () -> Highlight = { Highlight.Default }
 private val DefaultGlassShadow: () -> Shadow = { Shadow.Default }
 
@@ -145,7 +146,8 @@ fun Modifier.songfyLiquidGlass(
     exportedBackdrop: LayerBackdrop? = null,
 ): Modifier {
     val tint = if (dark) Color(0xFF121212) else Color(0xFFFAFAFA)
-    val blurSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !reducedTransparency
+    val liquidGlassEnabled = LocalSongfyLiquidGlassEnabled.current
+    val blurSupported = liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !reducedTransparency
     val backdrop = LocalSongfyBackdrop.current
 
     if (blurSupported && !highContrast && backdrop != null && shape is CornerBasedShape) {
@@ -198,6 +200,7 @@ fun Modifier.songfyLiquidGlass(
 
     val backgroundAlpha = when {
         highContrast -> 1.0f
+        !liquidGlassEnabled -> 0.96f
         reducedTransparency -> 0.96f
         blurSupported -> if (dark) 0.65f else 0.78f
         else -> 0.92f

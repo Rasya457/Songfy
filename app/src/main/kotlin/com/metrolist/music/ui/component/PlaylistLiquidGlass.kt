@@ -323,15 +323,17 @@ fun PlaylistFloatingTopBar(
                         checkmarkColor = Color.Black,
                     ),
                 )
-                IconButton(
-                    enabled = selectedCount > 0,
-                    onClick = onSelectionMoreClick,
-                    modifier = Modifier.size(38.dp),
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = selectedCount > 0, onClick = onSelectionMoreClick),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.more_vert),
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = if (selectedCount > 0) Color.White else Color.White.copy(alpha = 0.4f),
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -345,12 +347,15 @@ fun PlaylistFloatingTopBar(
                         shadowElevation = 10.dp,
                         shape = CircleShape,
                     )
-                    .padding(horizontal = 6.dp),
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
-                    onClick = onSearchClick,
-                    modifier = Modifier.size(42.dp),
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onSearchClick),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.search),
@@ -360,9 +365,12 @@ fun PlaylistFloatingTopBar(
                     )
                 }
                 if (onShareClick != null) {
-                    IconButton(
-                        onClick = onShareClick,
-                        modifier = Modifier.size(42.dp),
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onShareClick),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.share),
@@ -372,9 +380,12 @@ fun PlaylistFloatingTopBar(
                         )
                     }
                 }
-                IconButton(
-                    onClick = onMoreClick,
-                    modifier = Modifier.size(42.dp),
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onMoreClick),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.more_vert),

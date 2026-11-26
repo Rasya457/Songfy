@@ -485,7 +485,7 @@ fun LocalPlaylistScreen(
         }
     }
 
-    val coverUrl = playlist?.thumbnails?.firstOrNull()
+    val coverUrl = playlist?.playlist?.thumbnailUrl ?: playlist?.thumbnails?.firstOrNull()
     val coverPalette = rememberPlaylistCoverColors(coverUrl)
     val playlistBackdrop = rememberLayerBackdrop {
         drawRect(coverPalette.bottomColor)
@@ -805,6 +805,7 @@ fun LocalPlaylistScreen(
 
         CompositionLocalProvider(LocalSongfyBackdrop provides playlistBackdrop) {
             PlaylistFloatingTopBar(
+                modifier = Modifier.align(Alignment.TopCenter),
                 title = playlist?.playlist?.name.orEmpty(),
                 showTitle = showTopBarTitle,
                 inSelectMode = inSelectMode,
@@ -972,7 +973,7 @@ fun LocalPlaylistHeader(
         )
     }
 
-    val result = remember { mutableStateOf<Uri?>(null) }
+    val currentPlaylist by rememberUpdatedState(playlist)
     var pendingCropDestUri by remember { mutableStateOf<Uri?>(null) }
     var showEditNoteDialog by remember { mutableStateOf(false) }
 
@@ -980,7 +981,54 @@ fun LocalPlaylistHeader(
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
             if (res.resultCode == android.app.Activity.RESULT_OK) {
                 val output = res.data?.let { UCrop.getOutput(it) } ?: pendingCropDestUri
-                if (output != null) result.value = output
+                pendingCropDestUri = null
+                if (output != null) {
+                    val targetPlaylist = currentPlaylist
+                    val outputStr = output.toString()
+                    overrideThumbnail.value = outputStr
+                    isCustomThumbnail = true
+                    scope.launch(Dispatchers.IO) {
+                        val coverDir = java.io.File(context.filesDir, "playlist_covers")
+                        val currentFileName = output.lastPathSegment
+                        coverDir.listFiles { f ->
+                            f.name.startsWith("cover_${targetPlaylist.id}_") && f.name != currentFileName
+                        }?.forEach { runCatching { it.delete() } }
+
+                        when {
+                            targetPlaylist.playlist.browseId == null -> {
+                                database.query {
+                                    update(targetPlaylist.playlist.copy(thumbnailUrl = outputStr))
+                                }
+                            }
+
+                            else -> {
+                                val bytes = uriToByteArray(context, output)
+                                if (bytes != null) {
+                                    YouTube
+                                        .uploadCustomThumbnailLink(
+                                            targetPlaylist.playlist.browseId,
+                                            bytes,
+                                        ).onSuccess { newThumbnailUrl ->
+                                            withContext(Dispatchers.Main) {
+                                                overrideThumbnail.value = newThumbnailUrl
+                                                isCustomThumbnail = true
+                                            }
+                                            database.query {
+                                                update(targetPlaylist.playlist.copy(thumbnailUrl = newThumbnailUrl))
+                                            }
+                                        }.onFailure {
+                                            if (it is ClientRequestException) {
+                                                snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
+                                            }
+                                            reportException(it)
+                                        }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                pendingCropDestUri = null
             }
         }
 
@@ -999,7 +1047,7 @@ fun LocalPlaylistHeader(
         ) { uri ->
             uri?.let { sourceUri ->
                 val coverDir = java.io.File(context.filesDir, "playlist_covers").apply { mkdirs() }
-                val destFile = java.io.File(coverDir, "cover_${playlist.id}_${System.currentTimeMillis()}.jpg")
+                val destFile = java.io.File(coverDir, "cover_${currentPlaylist.id}_${System.currentTimeMillis()}.jpg")
                 val destUri = FileProvider.getUriForFile(context, "${context.packageName}.FileProvider", destFile)
                 pendingCropDestUri = destUri
 
@@ -1029,46 +1077,6 @@ fun LocalPlaylistHeader(
                 cropLauncher.launch(intent)
             }
         }
-
-    LaunchedEffect(result.value) {
-        val uri = result.value ?: return@LaunchedEffect
-        result.value = null
-        withContext(Dispatchers.IO) {
-            when {
-                playlist.playlist.browseId == null -> {
-                    overrideThumbnail.value = uri.toString()
-                    isCustomThumbnail = true
-
-                    // Update the database with the new thumbnail
-                    database.query {
-                        update(playlist.playlist.copy(thumbnailUrl = uri.toString()))
-                    }
-                }
-
-                else -> {
-                    val bytes = uriToByteArray(context, uri)
-                    YouTube
-                        .uploadCustomThumbnailLink(
-                            playlist.playlist.browseId,
-                            bytes!!,
-                        ).onSuccess { newThumbnailUrl ->
-                            overrideThumbnail.value = newThumbnailUrl
-                            isCustomThumbnail = true
-
-                            // Update the database with the new thumbnail URL
-                            database.query {
-                                update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
-                            }
-                        }.onFailure {
-                            if (it is ClientRequestException) {
-                                snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
-                            }
-                            reportException(it)
-                        }
-                }
-            }
-        }
-    }
 
     LaunchedEffect(songs) {
         if (songs.isEmpty()) return@LaunchedEffect
@@ -1248,6 +1256,10 @@ fun LocalPlaylistHeader(
                                                 playlist.playlist.browseId == null -> {
                                                     overrideThumbnail.value = null
                                                     scope.launch(Dispatchers.IO) {
+                                                        val coverDir = java.io.File(context.filesDir, "playlist_covers")
+                                                        coverDir.listFiles { f ->
+                                                            f.name.startsWith("cover_${playlist.id}_")
+                                                        }?.forEach { runCatching { it.delete() } }
                                                         database.query {
                                                             update(playlist.playlist.copy(thumbnailUrl = null))
                                                         }
@@ -1257,7 +1269,9 @@ fun LocalPlaylistHeader(
                                                 else -> {
                                                     scope.launch(Dispatchers.IO) {
                                                         YouTube.removeThumbnailPlaylist(playlist.playlist.browseId).onSuccess { newThumbnailUrl ->
-                                                            overrideThumbnail.value = newThumbnailUrl
+                                                            withContext(Dispatchers.Main) {
+                                                                overrideThumbnail.value = newThumbnailUrl
+                                                            }
                                                             database.query {
                                                                 update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
                                                             }

@@ -942,6 +942,7 @@ class MainActivity : FragmentActivity() {
                     }
 
                 val baseBg = if (pureBlack) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+                val (liquidGlassEnabled) = rememberPreference(com.metrolist.music.constants.LiquidGlassEnabledKey, defaultValue = true)
                 val appBackdrop = rememberLayerBackdrop {
                     drawRect(baseBg)
                     drawContent()
@@ -955,7 +956,8 @@ class MainActivity : FragmentActivity() {
                     LocalPlayerConnection provides playerConnection,
                     LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
                     LocalLiquidNavState provides liquidNavState,
-                    LocalSongfyBackdrop provides appBackdrop,
+                    LocalSongfyBackdrop provides if (liquidGlassEnabled) appBackdrop else null,
+                    com.songfy.ui.LocalSongfyLiquidGlassEnabled provides liquidGlassEnabled,
                     LocalDownloadUtil provides downloadUtil,
                     LocalShimmerTheme provides ShimmerTheme,
                     LocalSyncUtils provides syncUtils,
@@ -1182,7 +1184,11 @@ class MainActivity : FragmentActivity() {
                                 .fillMaxSize()
                                 .nestedScroll(liquidNavState.nestedScrollConnection),
                     ) {
-                        Row(Modifier.fillMaxSize().layerBackdrop(appBackdrop)) {
+                        Row(
+                            Modifier
+                                .fillMaxSize()
+                                .then(if (liquidGlassEnabled) Modifier.layerBackdrop(appBackdrop) else Modifier),
+                        ) {
                             // Prevent children inside appBackdrop from recursively calling drawBackdrop(appBackdrop)
                             CompositionLocalProvider(LocalSongfyBackdrop provides null) {
                             val onRailItemClick: (Screens, Boolean) -> Unit =
@@ -1230,8 +1236,9 @@ class MainActivity : FragmentActivity() {
                             }
                             Box(Modifier.weight(1f)) {
                                 // NavHost with animations (Material 3 Expressive style)
-                                // Fluid Apple-style opaque transitions — zero black flash between screens
-                                val fluidEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
+                                // Smooth Apple-style opaque navigation transitions (iOS curve, unhurried deceleration)
+                                val iosNavEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f) }
+                                val tabEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f) }
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -1245,16 +1252,16 @@ class MainActivity : FragmentActivity() {
                                         val previousRouteIndex = routeIndexMap[initialState.destination.route] ?: -1
 
                                         if (reducedMotion) {
-                                            fadeIn(tween(120))
+                                            fadeIn(tween(150))
                                         } else if (currentRouteIndex == -1) {
-                                            // Sub-screens (Settings, Playlist, Album, etc.): full-opacity slide from right
-                                            slideInHorizontally(tween(280, easing = fluidEasing)) { it }
+                                            // Sub-screens (Settings, Playlist, Album, etc.): smooth full-opacity iOS push
+                                            slideInHorizontally(tween(400, easing = iosNavEasing)) { it }
                                         } else if (currentRouteIndex > previousRouteIndex) {
-                                            slideInHorizontally(tween(240, easing = fluidEasing)) { it / 6 } +
-                                                fadeIn(tween(180, easing = fluidEasing))
+                                            slideInHorizontally(tween(340, easing = iosNavEasing)) { it / 8 } +
+                                                fadeIn(tween(280, easing = tabEasing))
                                         } else {
-                                            slideInHorizontally(tween(240, easing = fluidEasing)) { -it / 6 } +
-                                                fadeIn(tween(180, easing = fluidEasing))
+                                            slideInHorizontally(tween(340, easing = iosNavEasing)) { -it / 8 } +
+                                                fadeIn(tween(280, easing = tabEasing))
                                         }
                                     },
                                     exitTransition = {
@@ -1262,16 +1269,16 @@ class MainActivity : FragmentActivity() {
                                         val targetRouteIndex = routeIndexMap[targetState.destination.route] ?: -1
 
                                         if (reducedMotion) {
-                                            fadeOut(tween(120))
+                                            fadeOut(tween(150))
                                         } else if (targetRouteIndex == -1) {
-                                            // Keep outgoing screen fully opaque while sub-screen slides over it
-                                            slideOutHorizontally(tween(280, easing = fluidEasing)) { -it / 5 }
+                                            // Keep outgoing screen fully opaque with subtle iOS parallax
+                                            slideOutHorizontally(tween(400, easing = iosNavEasing)) { -it / 4 }
                                         } else if (targetRouteIndex > currentRouteIndex) {
-                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
-                                                fadeOut(tween(180, delayMillis = 60, easing = fluidEasing))
+                                            slideOutHorizontally(tween(340, easing = iosNavEasing)) { -it / 8 } +
+                                                fadeOut(tween(240, easing = tabEasing))
                                         } else {
-                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
-                                                fadeOut(tween(180, delayMillis = 60, easing = fluidEasing))
+                                            slideOutHorizontally(tween(340, easing = iosNavEasing)) { it / 8 } +
+                                                fadeOut(tween(240, easing = tabEasing))
                                         }
                                     },
                                     popEnterTransition = {
@@ -1279,16 +1286,16 @@ class MainActivity : FragmentActivity() {
                                         val previousRouteIndex = routeIndexMap[initialState.destination.route] ?: -1
 
                                         if (reducedMotion) {
-                                            fadeIn(tween(120))
+                                            fadeIn(tween(150))
                                         } else if (previousRouteIndex == -1) {
-                                            // Returning from sub-screen: stay fully opaque while sub-screen slides away
-                                            slideInHorizontally(tween(260, easing = fluidEasing)) { -it / 5 }
+                                            // Returning from sub-screen: smooth parallax glide back at full opacity
+                                            slideInHorizontally(tween(380, easing = iosNavEasing)) { -it / 4 }
                                         } else if (previousRouteIndex < currentRouteIndex) {
-                                            slideInHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
-                                                fadeIn(tween(180, easing = fluidEasing))
+                                            slideInHorizontally(tween(340, easing = iosNavEasing)) { it / 8 } +
+                                                fadeIn(tween(280, easing = tabEasing))
                                         } else {
-                                            slideInHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
-                                                fadeIn(tween(180, easing = fluidEasing))
+                                            slideInHorizontally(tween(340, easing = iosNavEasing)) { -it / 8 } +
+                                                fadeIn(tween(280, easing = tabEasing))
                                         }
                                     },
                                     popExitTransition = {
@@ -1296,16 +1303,16 @@ class MainActivity : FragmentActivity() {
                                         val targetRouteIndex = routeIndexMap[targetState.destination.route] ?: -1
 
                                         if (reducedMotion) {
-                                            fadeOut(tween(120))
+                                            fadeOut(tween(150))
                                         } else if (currentRouteIndex == -1) {
-                                            // Sub-screen slides cleanly off to the right at full opacity
-                                            slideOutHorizontally(tween(260, easing = fluidEasing)) { it }
+                                            // Sub-screen glides cleanly off to the right at full opacity
+                                            slideOutHorizontally(tween(380, easing = iosNavEasing)) { it }
                                         } else if (currentRouteIndex < targetRouteIndex) {
-                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { -it / 8 } +
-                                                fadeOut(tween(180, delayMillis = 40, easing = fluidEasing))
+                                            slideOutHorizontally(tween(340, easing = iosNavEasing)) { -it / 8 } +
+                                                fadeOut(tween(240, easing = tabEasing))
                                         } else {
-                                            slideOutHorizontally(tween(240, easing = fluidEasing)) { it / 8 } +
-                                                fadeOut(tween(180, delayMillis = 40, easing = fluidEasing))
+                                            slideOutHorizontally(tween(340, easing = iosNavEasing)) { it / 8 } +
+                                                fadeOut(tween(240, easing = tabEasing))
                                         }
                                     },
                                     // Scaffold already contains nestedScroll for liquidNavState, avoid duplicate dispatch

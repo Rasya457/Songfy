@@ -49,8 +49,8 @@ fun CustomThumbnailMenu(
                     )
                 },
                 modifier = Modifier.clickable {
-                    onEdit()
                     onDismiss()
+                    onEdit()
                 }
             )
         }
