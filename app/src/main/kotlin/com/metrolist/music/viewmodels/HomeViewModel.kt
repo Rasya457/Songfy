@@ -54,6 +54,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -82,15 +83,14 @@ internal fun buildSpeedDialItems(
     quickPicks: List<YTItem>,
     home: List<YTItem>,
 ): List<YTItem> {
-    // Interleave personal history (keepListening), hybrid quickPicks, and YT collaborative home items
-    val mixed = mutableListOf<YTItem>()
-    val maxLen = maxOf(keepListening.size, quickPicks.size, home.size)
-    for (i in 0 until maxLen) {
-        if (i < keepListening.size) mixed.add(keepListening[i])
-        if (i < home.size) mixed.add(home[i])
-        if (i < quickPicks.size) mixed.add(quickPicks[i])
+    // Prioritize personal listening history & quick picks; only backfill with YouTube home items if needed
+    val personal = mutableListOf<YTItem>()
+    val maxPersonal = maxOf(keepListening.size, quickPicks.size)
+    for (i in 0 until maxPersonal) {
+        if (i < keepListening.size) personal.add(keepListening[i])
+        if (i < quickPicks.size) personal.add(quickPicks[i])
     }
-    return (pinned + mixed)
+    return (pinned + personal + home)
         .distinctBy { it.id }
         .take(27)
 }
@@ -331,6 +331,13 @@ class HomeViewModel @Inject constructor(
                 val ytSimilarSongs = mutableListOf<Song>()
 
                 if (recentSong != null) {
+                    if (database.hasRelatedSongs(recentSong.id)) {
+                        ytSimilarSongs.addAll(
+                            database.getRelatedSongs(recentSong.id).first()
+                                .filterVideoSongs(hideVideoSongs)
+                                .take(10)
+                        )
+                    }
                     val endpoint = YouTube.next(WatchEndpoint(videoId = recentSong.id)).getOrNull()?.relatedEndpoint
                     if (endpoint != null) {
                         YouTube.related(endpoint).onSuccess { page ->
@@ -428,81 +435,6 @@ class HomeViewModel @Inject constructor(
         return selected
     }
 
-    private suspend fun getCommunityPlaylists() {
-        val fromTimeStamp = LocalDateTime.now().minusWeeks(4)
-        val artistSeeds = database.mostPlayedArtists(fromTimeStamp, limit = 10).first()
-            .filter { it.artist.isYouTubeArtist }
-            .shuffled().take(3)
-        val songSeeds = database.mostPlayedSongs(fromTimeStamp = fromTimeStamp, limit = 5, offset = 0, toTimeStamp = LocalDateTime.now()).first()
-            .shuffled().take(2)
-
-        val candidatePlaylists = java.util.Collections.synchronizedList(mutableListOf<PlaylistItem>())
-
-        kotlinx.coroutines.coroutineScope {
-            artistSeeds.map { seed ->
-                launch(Dispatchers.IO) {
-                    YouTube.artist(seed.id).onSuccess { page ->
-                        page.sections.forEach { section ->
-                            section.items.filterIsInstance<PlaylistItem>().forEach { playlist ->
-                                if (playlist.author?.name != "YouTube Music" && 
-                                    playlist.author?.name != "YouTube" && 
-                                    playlist.author?.name != "Playlist" &&
-                                    playlist.author?.name != seed.artist.name &&
-                                    !playlist.id.startsWith("RD") &&
-                                    !playlist.id.startsWith("OLAK")
-                                ) {
-                                    candidatePlaylists.add(playlist)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            songSeeds.map { seed ->
-                launch(Dispatchers.IO) {
-                    val endpoint = YouTube.next(WatchEndpoint(videoId = seed.id)).getOrNull()?.relatedEndpoint
-                    if (endpoint != null) {
-                        YouTube.related(endpoint).onSuccess { page ->
-                            page.playlists.forEach { playlist ->
-                                if (playlist.author?.name != "YouTube Music" && 
-                                    playlist.author?.name != "YouTube" && 
-                                    playlist.author?.name != "Playlist" &&
-                                    !playlist.id.startsWith("RD") &&
-                                    !playlist.id.startsWith("OLAK")
-                                ) {
-                                    candidatePlaylists.add(playlist)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val uniqueCandidates = candidatePlaylists.distinctBy { it.id }.shuffled().take(5)
-
-        val playlists = java.util.Collections.synchronizedList(mutableListOf<CommunityPlaylistItem>())
-
-        kotlinx.coroutines.coroutineScope {
-            uniqueCandidates.map { playlist ->
-                launch(Dispatchers.IO) {
-                    YouTube.playlist(playlist.id).onSuccess { page ->
-                        val songs = page.songs.take(10)
-                        if (songs.isNotEmpty()) {
-                            // Use song count from the playlist page if available, otherwise use original
-                            val songCountText = page.playlist.songCountText ?: playlist.songCountText
-                            val updatedPlaylist = playlist.copy(songCountText = songCountText)
-                            playlists.add(CommunityPlaylistItem(updatedPlaylist, songs))
-                        }
-                    }
-                }
-            }.forEach { it.join() }
-        }
-
-        communityPlaylists.value = playlists.shuffled()
-    }
-
     private suspend fun load() {
         isLoading.value = true
         val prefs = context.dataStore.data.first()
@@ -535,6 +467,7 @@ class HomeViewModel @Inject constructor(
                 YouTube.home().onSuccess { page ->
                     homePage.value = page.copy(
                         sections = page.sections.mapNotNull { section ->
+                            if (section.isCommunitySection()) return@mapNotNull null
                             val filtered = section.items
                                 .filterOutNulls()
                                 .filterExplicit(hideExplicit)
@@ -549,12 +482,11 @@ class HomeViewModel @Inject constructor(
 
         allLocalItems.value = (quickPicks.value.orEmpty() + forgottenFavorites.value.orEmpty() + keepListening.value.orEmpty())
             .filter { it is Song || it is Album }
+        communityPlaylists.value = emptyList()
         isLoading.value = false
 
         // Phase 2: Heavy multi-request operations — run in background without blocking the UI.
         viewModelScope.launch(Dispatchers.IO) { getDailyDiscover(hideVideoSongs) }
-
-        viewModelScope.launch(Dispatchers.IO) { getCommunityPlaylists() }
 
         viewModelScope.launch(Dispatchers.IO) {
             YouTube.explore().onSuccess { page ->
@@ -654,6 +586,7 @@ class HomeViewModel @Inject constructor(
             homePage.value = nextSections.copy(
                 chips = homePage.value?.chips,
                 sections = (homePage.value?.sections.orEmpty() + nextSections.sections).mapNotNull { section ->
+                    if (section.isCommunitySection()) return@mapNotNull null
                     val filteredItems = section.items
                         .filterOutNulls()
                         .filterExplicit(hideExplicit)
@@ -688,7 +621,9 @@ class HomeViewModel @Inject constructor(
             homePage.value = nextSections.copy(
                 chips = homePage.value?.chips,
                 sections = nextSections.sections.mapNotNull { section ->
-                    section.copy(items = section.items.filterOutNulls().filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts))
+                    if (section.isCommunitySection()) return@mapNotNull null
+                    val filtered = section.items.filterOutNulls().filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts)
+                    if (filtered.isEmpty()) null else section.copy(items = filtered)
                 }
             )
             selectedChip.value = chip
@@ -716,6 +651,11 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private fun HomePage.Section.isCommunitySection(): Boolean {
+        val text = "$title ${label.orEmpty()}".lowercase()
+        return text.contains("community") || text.contains("komunitas")
+    }
+
     /**
      * Safely filters out null items from a list whose type says non-null
      * but may contain nulls at runtime due to JSON parsing.
@@ -740,7 +680,9 @@ class HomeViewModel @Inject constructor(
                     homePage.value = nextSections.copy(
                         chips = homePage.value?.chips,
                         sections = nextSections.sections.mapNotNull { section ->
-                            section.copy(items = section.items.filterOutNulls().filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts))
+                            if (section.isCommunitySection()) return@mapNotNull null
+                            val filtered = section.items.filterOutNulls().filterExplicit(hideExplicit).filterVideoSongs(hideVideoSongs).filterYoutubeShorts(hideYoutubeShorts)
+                            if (filtered.isEmpty()) null else section.copy(items = filtered)
                         }
                     )
                 }
@@ -767,6 +709,52 @@ class HomeViewModel @Inject constructor(
                     refresh()
                 }
             }
+        }
+
+        // Reactively adapt Quick Picks & Similar Recommendations to newly played songs (debounced to ignore rapid skips)
+        viewModelScope.launch(Dispatchers.IO) {
+            var initialized = false
+            database.latestEvent()
+                .map { it?.song }
+                .distinctUntilChanged { old, new -> old?.id == new?.id }
+                .collectLatest { recentSong ->
+                    if (!initialized) {
+                        initialized = true
+                        return@collectLatest
+                    }
+                    val song = recentSong ?: return@collectLatest
+                    delay(12_000L)
+                    if (!isHomeDataLoaded || selectedChip.value != null) return@collectLatest
+
+                    val prefs = context.dataStore.data.first()
+                    val hideExplicit = prefs[HideExplicitKey] ?: false
+                    val hideVideoSongs = prefs[HideVideoSongsKey] ?: false
+
+                    runCatching { getQuickPicks(hideVideoSongs) }
+
+                    val endpoint = runCatching {
+                        YouTube.next(WatchEndpoint(videoId = song.id)).getOrNull()?.relatedEndpoint
+                    }.getOrNull() ?: return@collectLatest
+
+                    val relatedPage = runCatching { YouTube.related(endpoint).getOrNull() }.getOrNull()
+                        ?: return@collectLatest
+
+                    val items = (relatedPage.songs.take(10) +
+                            relatedPage.albums.take(4) +
+                            relatedPage.artists.take(2) +
+                            relatedPage.playlists.take(2))
+                        .distinctBy { it.id }
+                        .filter { it.id != song.id }
+                        .filterExplicit(hideExplicit)
+                        .filterVideoSongs(hideVideoSongs)
+
+                    if (items.isNotEmpty()) {
+                        val freshRec = SimilarRecommendation(title = song, items = items)
+                        val existing = similarRecommendations.value.orEmpty()
+                            .filterNot { it.title.id == song.id }
+                        similarRecommendations.value = (listOf(freshRec) + existing).take(8)
+                    }
+                }
         }
 
         // Prepare wrapped data in background

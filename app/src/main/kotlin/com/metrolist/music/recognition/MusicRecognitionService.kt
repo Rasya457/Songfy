@@ -164,13 +164,34 @@ object MusicRecognitionService {
         )
         Timber.tag(TAG).d("Recording audio: sampleRate=%d, bufferSize=%d, durationMs=%d", RECORDING_SAMPLE_RATE, bufferSize, RECORDING_DURATION_MS)
 
-        val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            RECORDING_SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            bufferSize
-        )
+        val audioRecord = run {
+            val preferredSource = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                MediaRecorder.AudioSource.UNPROCESSED
+            } else {
+                MediaRecorder.AudioSource.MIC
+            }
+            val primary = runCatching {
+                AudioRecord(
+                    preferredSource,
+                    RECORDING_SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize,
+                )
+            }.getOrNull()
+            if (primary != null && primary.state == AudioRecord.STATE_INITIALIZED) {
+                primary
+            } else {
+                primary?.release()
+                AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    RECORDING_SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize,
+                )
+            }
+        }
         
         val outputStream = ByteArrayOutputStream()
         val buffer = ByteArray(bufferSize)

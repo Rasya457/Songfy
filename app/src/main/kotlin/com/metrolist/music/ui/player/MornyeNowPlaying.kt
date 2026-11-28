@@ -44,6 +44,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.sin
@@ -374,15 +375,12 @@ fun MornyeNowPlaying(
         isLyricsOpen = mode == NowPlayingMode.LYRICS && !isSelectingLyricsForShare,
         isInteracting = isScrubbing || isVolumeDragging,
     )
-    val isMotionArtworkActive by remember(state) {
-        derivedStateOf { state.progress > 0.8f }
-    }
 
     LaunchedEffect(isPlaying, isPlayerMode) {
         if (isPlaying && isPlayerMode) {
             while (true) {
-                artworkPulse.animateTo(1f, tween(5200, easing = LinearEasing))
-                artworkPulse.animateTo(0f, tween(5200, easing = LinearEasing))
+                artworkPulse.animateTo(1f, tween(6500, easing = FastOutSlowInEasing))
+                artworkPulse.animateTo(0f, tween(6500, easing = FastOutSlowInEasing))
             }
         } else {
             artworkPulse.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
@@ -418,12 +416,6 @@ fun MornyeNowPlaying(
             .data(mediaMetadata?.thumbnailUrl)
             .crossfade(200)
             .build()
-    }
-    var motionArtworkUrl by remember(mediaMetadata?.id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(mediaMetadata?.id) {
-        val metadata = mediaMetadata ?: return@LaunchedEffect
-        val artistNames = metadata.artists.joinToString { it.name }
-        motionArtworkUrl = TidalMotionArtwork.find(metadata.title, artistNames, metadata.album?.title)
     }
 
     // Pre-computed artwork blur (worker thread 3-pass box blur, LruCache(8), 360ms crossfade)
@@ -657,9 +649,6 @@ fun MornyeNowPlaying(
     val showOverlayAndControls by remember(state) {
         derivedStateOf { !(state.isClosingOrCollapsed && state.progress <= 0.64f) }
     }
-    val showMotionVideo by remember(state) {
-        derivedStateOf { !(state.isClosingOrCollapsed && state.progress <= 0.90f) }
-    }
 
     // Do NOT drawRect(Color.Black) here: LayerBackdrop composites onDraw directly onto screen,
     // which previously painted solid black over Home throughout the entire collapse animation.
@@ -811,7 +800,7 @@ fun MornyeNowPlaying(
                         val p = state.progress.coerceIn(0f, 1f)
                         val collapseProgress = 1f - p
                         val expandedWeight = p
-                        val breath = artworkPulse.value * 0.012f
+                        val breath = artworkPulse.value * 0.042f
                         val startScale = 1f - (transitionProgress * 0.10f * expandedWeight) + (breath * expandedWeight)
                         val targetScale = 40.dp.toPx() / size.minDimension
                         val scaleFraction = p * (0.36f + 0.64f * p)
@@ -827,8 +816,9 @@ fun MornyeNowPlaying(
                         } else {
                             1f - smoothstep(0.0f, 0.95f, p)
                         }
-                        translationX = (targetCenterX - size.width / 2f) * pathProgress
-                        translationY = ((-transitionProgress * 90.dp.toPx()) + ((artworkPulse.value - 0.5f) * 4.dp.toPx())) * expandedWeight +
+                        val kenBurnsX = sin(artworkPulse.value * Math.PI.toFloat()) * 4.dp.toPx() * expandedWeight
+                        translationX = kenBurnsX + (targetCenterX - size.width / 2f) * pathProgress
+                        translationY = ((-transitionProgress * 90.dp.toPx()) + ((artworkPulse.value - 0.5f) * 7.dp.toPx())) * expandedWeight +
                             (targetCenterY - size.height / 2f) * pathProgress
 
                         val morphFade = if (state.isClosingOrCollapsed) {
@@ -885,60 +875,98 @@ fun MornyeNowPlaying(
             ) {
             if (!hidePlayerThumbnail) {
                 val coverSwipeOffsetX = remember { Animatable(0f) }
+                var heroWidthPx by remember { mutableFloatStateOf(1080f) }
+
+                val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
+                val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
+                val (prevCoverUrl, nextCoverUrl) = remember(mediaMetadata?.id, queueWindows, shuffleModeEnabled) {
+                    val p = playerConnection.player
+                    val prevIdx = p.previousMediaItemIndex
+                    val nextIdx = p.nextMediaItemIndex
+                    val prevUrl = if (prevIdx != androidx.media3.common.C.INDEX_UNSET && prevIdx in 0 until p.mediaItemCount) {
+                        p.getMediaItemAt(prevIdx).mediaMetadata.artworkUri?.toString()
+                    } else null
+                    val nextUrl = if (nextIdx != androidx.media3.common.C.INDEX_UNSET && nextIdx in 0 until p.mediaItemCount) {
+                        p.getMediaItemAt(nextIdx).mediaMetadata.artworkUri?.toString()
+                    } else null
+                    prevUrl to nextUrl
+                }
+
+                // Adjacent cover art peeking in as the user drags left (next) or right (previous)
+                val dragOffset = coverSwipeOffsetX.value
+                val dragFrac = (kotlin.math.abs(dragOffset) / heroWidthPx.coerceAtLeast(360f)).coerceIn(0f, 1f)
+                val isSwipingToNext = if (layoutDirection == LayoutDirection.Rtl) dragOffset > 0f else dragOffset < 0f
+                val peekCoverUrl = if (isSwipingToNext) nextCoverUrl else prevCoverUrl
+
+                if (kotlin.math.abs(dragOffset) > 2f && peekCoverUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(peekCoverUrl)
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val sign = if (dragOffset < 0f) 1f else -1f
+                                translationX = sign * heroWidthPx + dragOffset
+                                val peekScale = 0.94f + dragFrac * 0.06f
+                                scaleX = peekScale
+                                scaleY = peekScale
+                                alpha = 0.55f + dragFrac * 0.45f
+                            },
+                    )
+                }
+
                 AsyncImage(
                     model = coverImageRequest,
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
+                        .onSizeChanged { sz ->
+                            if (sz.width > 0) heroWidthPx = sz.width.toFloat()
+                        }
                         .graphicsLayer {
                             val offset = coverSwipeOffsetX.value
-                            val frac = (kotlin.math.abs(offset) / 360f).coerceIn(0f, 1f)
+                            val frac = (kotlin.math.abs(offset) / heroWidthPx.coerceAtLeast(360f)).coerceIn(0f, 1f)
                             translationX = offset
                             val s = 1f - frac * 0.06f
                             scaleX = s
                             scaleY = s
-                            alpha = 1f - frac * 0.40f
-                            rotationZ = (offset / 360f) * 3.5f
+                            alpha = 1f - frac * 0.35f
                         }
                         .let { base ->
                             if (swipeThumbnail && isPlayerMode) {
-                                base.pointerInput(layoutDirection, playerConnection) {
+                                base.pointerInput(layoutDirection, playerConnection, nextCoverUrl, prevCoverUrl) {
                                     detectHorizontalDragGestures(
                                         onDragStart = {
                                             coroutineScope.launch { coverSwipeOffsetX.stop() }
                                         },
                                         onDragEnd = {
-                                            val threshold = 110f
+                                            val threshold = (heroWidthPx * 0.22f).coerceIn(95f, 220f)
                                             val currentOffset = coverSwipeOffsetX.value
                                             val directed = if (layoutDirection == LayoutDirection.Rtl) -currentOffset else currentOffset
                                             coroutineScope.launch {
-                                                if (directed < -threshold) {
+                                                if (directed < -threshold && playerConnection.player.hasNextMediaItem()) {
                                                     coverSwipeOffsetX.animateTo(
-                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) 380f else -380f,
-                                                        animationSpec = tween(durationMillis = 120),
+                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) heroWidthPx else -heroWidthPx,
+                                                        animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
                                                     )
                                                     playerConnection.player.seekToNext()
-                                                    coverSwipeOffsetX.snapTo(if (layoutDirection == LayoutDirection.Rtl) -200f else 200f)
+                                                    coverSwipeOffsetX.snapTo(0f)
+                                                } else if (directed > threshold && playerConnection.player.hasPreviousMediaItem()) {
                                                     coverSwipeOffsetX.animateTo(
-                                                        targetValue = 0f,
-                                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
-                                                    )
-                                                } else if (directed > threshold) {
-                                                    coverSwipeOffsetX.animateTo(
-                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) -380f else 380f,
-                                                        animationSpec = tween(durationMillis = 120),
+                                                        targetValue = if (layoutDirection == LayoutDirection.Rtl) -heroWidthPx else heroWidthPx,
+                                                        animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing),
                                                     )
                                                     playerConnection.player.seekToPrevious()
-                                                    coverSwipeOffsetX.snapTo(if (layoutDirection == LayoutDirection.Rtl) 200f else -200f)
-                                                    coverSwipeOffsetX.animateTo(
-                                                        targetValue = 0f,
-                                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
-                                                    )
+                                                    coverSwipeOffsetX.snapTo(0f)
                                                 } else {
                                                     coverSwipeOffsetX.animateTo(
                                                         targetValue = 0f,
-                                                        animationSpec = spring(dampingRatio = 0.78f, stiffness = 450f),
+                                                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
                                                     )
                                                 }
                                             }
@@ -947,14 +975,15 @@ fun MornyeNowPlaying(
                                             coroutineScope.launch {
                                                 coverSwipeOffsetX.animateTo(
                                                     targetValue = 0f,
-                                                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 450f),
+                                                    animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f),
                                                 )
                                             }
                                         },
                                         onHorizontalDrag = { _, dragAmount ->
                                             coroutineScope.launch {
+                                                val maxDrag = heroWidthPx.coerceAtLeast(360f)
                                                 coverSwipeOffsetX.snapTo(
-                                                    (coverSwipeOffsetX.value + dragAmount).coerceIn(-360f, 360f)
+                                                    (coverSwipeOffsetX.value + dragAmount).coerceIn(-maxDrag, maxDrag)
                                                 )
                                             }
                                         },
@@ -963,42 +992,7 @@ fun MornyeNowPlaying(
                             } else base
                         },
                 )
-                val swipeProgress = (kotlin.math.abs(coverSwipeOffsetX.value) / 110f).coerceIn(0f, 1f)
-                if (swipeProgress > 0.15f) {
-                    val isSwipingLeft = coverSwipeOffsetX.value < 0f
-                    Box(
-                        modifier = Modifier
-                            .align(if (isSwipingLeft) Alignment.CenterEnd else Alignment.CenterStart)
-                            .padding(horizontal = 12.dp)
-                            .size(36.dp)
-                            .graphicsLayer {
-                                alpha = swipeProgress
-                                val pillScale = 0.8f + 0.2f * swipeProgress
-                                scaleX = pillScale
-                                scaleY = pillScale
-                            }
-                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                            .border(0.75.dp, Color.White.copy(alpha = 0.28f), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = if (isSwipingLeft) "»" else "«",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
             }
-                if (showMotionVideo) {
-                    motionArtworkUrl?.let { url ->
-                        MotionArtworkPlayer(
-                            url = url,
-                            isPlaying = isPlaying && isPlayerMode && isMotionArtworkActive,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
             }
         }
 
@@ -1450,53 +1444,68 @@ fun MornyeNowPlaying(
                         val arrivingSoonText = stringResource(R.string.lyrics_arriving_soon)
                         val arrivingSoonId = if (Locale.getDefault().language == "in" ||
                             Locale.getDefault().language == "id") "Kata-katanya segera tiba" else arrivingSoonText
-                        val previewText by remember(parsedLyrics) {
+                        // The preview is keyed by line index and switches 60ms early (same lead as the full lyrics view)
+                        // so both stay in step; the box height is fixed so 1-line/2-line swaps never push the controls.
+                        val previewState by remember(parsedLyrics) {
                             derivedStateOf {
                                 if (parsedLyrics.isEmpty()) {
-                                    arrivingSoonId
+                                    -1 to arrivingSoonId
                                 } else {
-                                    // shortcut: read live State so derivedStateOf tracks it
-                                    val pos = positionState.longValue
+                                    val pos = positionState.longValue + 60L
                                     val idx = parsedLyrics.indexOfFirst { pos in it.startMs..it.endMs }
                                         .takeIf { it >= 0 }
                                         ?: parsedLyrics.indexOfLast { pos >= it.startMs }
-                                    parsedLyrics.getOrNull(idx)?.text?.takeIf { it.isNotBlank() }
-                                        ?: arrivingSoonId
+                                    val text = parsedLyrics.getOrNull(idx)?.text?.takeIf { it.isNotBlank() }
+                                    if (text == null) -1 to arrivingSoonId else idx to text
                                 }
                             }
                         }
+                        val previewEasing = remember {
+                            androidx.compose.animation.core.CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+                        }
+                        val previewHeight = with(androidx.compose.ui.platform.LocalDensity.current) { 44.sp.toDp() }
 
-                        AnimatedContent(
-                            targetState = previewText,
-                            transitionSpec = {
-                                (androidx.compose.animation.slideInVertically(
-                                    tween(320, easing = FastOutSlowInEasing),
-                                ) { it / 2 } + fadeIn(tween(320))) togetherWith
-                                    (androidx.compose.animation.slideOutVertically(
-                                        tween(240, easing = FastOutSlowInEasing),
-                                    ) { -it / 2 } + fadeOut(tween(220)))
-                            },
-                            label = "lyricsPreview",
-                        ) { text ->
-                            Text(
-                                text = text,
-                                color = Color.White.copy(alpha = 0.88f),
-                                fontSize = 17.sp,
-                                lineHeight = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Start,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 24.dp)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) {
-                                        mode = NowPlayingMode.LYRICS
-                                    },
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(previewHeight),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            AnimatedContent(
+                                targetState = previewState,
+                                transitionSpec = {
+                                    (
+                                        androidx.compose.animation.slideInVertically(
+                                            tween(700, easing = previewEasing),
+                                        ) { it / 2 } + fadeIn(tween(550, delayMillis = 120, easing = previewEasing))
+                                        ) togetherWith (
+                                        androidx.compose.animation.slideOutVertically(
+                                            tween(600, easing = previewEasing),
+                                        ) { -it / 2 } + fadeOut(tween(380, easing = previewEasing))
+                                        )
+                                },
+                                label = "lyricsPreview",
+                            ) { (_, text) ->
+                                Text(
+                                    text = text,
+                                    color = Color.White.copy(alpha = 0.88f),
+                                    fontSize = 17.sp,
+                                    lineHeight = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Start,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) {
+                                            mode = NowPlayingMode.LYRICS
+                                        },
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))

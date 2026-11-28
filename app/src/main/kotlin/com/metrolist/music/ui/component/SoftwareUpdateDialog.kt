@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -115,13 +116,9 @@ fun SoftwareUpdateDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth(0.84f)
+                        .shadow(24.dp, cardShape)
                         .clip(cardShape)
-                        .songfyLiquidGlass(
-                            dark = true,
-                            shadowElevation = 24.dp,
-                            shape = cardShape,
-                        )
-                        .background(Color(0xD8141418))
+                        .background(Color(0xEB15151A))
                         .border(0.75.dp, Color.White.copy(alpha = 0.14f), cardShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },

@@ -509,6 +509,7 @@ class MusicService :
     private var cachedShufflePlaylistFirst = false
     @Volatile
     private var cachedAutoLoadMore = true
+    private var isAutoLoadingMore = false
 
     // URL cache for stream URLs - class-level so it can be invalidated on errors
     private val songUrlCache = StreamUrlCache()
@@ -895,7 +896,9 @@ class MusicService :
 
         combine(
             currentMediaMetadata.distinctUntilChangedBy { it?.id },
-            dataStore.data.map { it[ShowLyricsKey] ?: false }.distinctUntilChanged(),
+            dataStore.data
+                .map { (it[ShowLyricsKey] ?: false) || (it[com.metrolist.music.constants.LockScreenLyricsKey] ?: false) }
+                .distinctUntilChanged(),
         ) { mediaMetadata, showLyrics ->
             mediaMetadata to showLyrics
         }.collectLatest(scope) { (mediaMetadata, showLyrics) ->
@@ -1993,21 +1996,15 @@ class MusicService :
                     YouTube
                         .next(WatchEndpoint(playlistId = playlistId))
                         .onSuccess { firstResult ->
-                            YouTube
-                                .next(WatchEndpoint(playlistId = firstResult.endpoint.playlistId))
-                                .onSuccess { secondResult ->
-                                    automixItems.value =
-                                        secondResult.items.map { song ->
-                                            song.toMediaItem()
-                                        }
-                                }.onFailure {
-                                    if (firstResult.items.isNotEmpty()) {
-                                        automixItems.value =
-                                            firstResult.items.map { song ->
-                                                song.toMediaItem()
-                                            }
-                                    }
-                                }
+                            val existingIds = withContext(Dispatchers.Main) {
+                                (0 until player.mediaItemCount).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
+                            }
+                            val items = firstResult.items
+                                .filter { it.id !in existingIds }
+                                .map { song -> song.toMediaItem() }
+                            if (items.isNotEmpty()) {
+                                automixItems.value = items
+                            }
                         }.onFailure {
                             val currentSong = player.currentMetadata
                             if (currentSong != null) {
@@ -2625,24 +2622,101 @@ class MusicService :
         }
 
         if (cachedAutoLoadMore &&
+            !isAutoLoadingMore &&
             reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT &&
             player.mediaItemCount - player.currentMediaItemIndex <= 5 &&
             currentQueue.hasNextPage() &&
             !(cachedDisableLoadMoreWhenRepeatAll && player.repeatMode == REPEAT_MODE_ALL)
         ) {
+            isAutoLoadingMore = true
+            val queueCountSnapshot = player.mediaItemCount
+            val currentIdxSnapshot = player.currentMediaItemIndex
+            val existingIds = (0 until queueCountSnapshot).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
+            val currentMeta = player.currentMetadata
+            val currentArtistIds = currentMeta?.artists?.mapNotNull { it.id }?.toSet().orEmpty()
+            val recentArtistIds = ((currentIdxSnapshot - 4).coerceAtLeast(0)..currentIdxSnapshot)
+                .flatMap { idx -> player.getMediaItemAt(idx).metadata?.artists?.mapNotNull { it.id }.orEmpty() }
+                .toSet()
+
             scope.launch(SilentHandler) {
+                try {
                 val mediaItems =
                     withContext(Dispatchers.IO) {
-                        currentQueue
+                        val pageItems = currentQueue
                             .nextPage()
                             .filterExplicit(cachedHideExplicit)
                             .filterVideoSongs(cachedHideVideoSongs)
+
+                        // Re-anchor long radio sessions using YouTube.related of the currently listened track to prevent RDAMVM drift
+                        val reanchoredItems = if (currentQueue is YouTubeQueue && queueCountSnapshot >= 12 && currentMeta != null) {
+                            runCatching {
+                                val relEndpoint = YouTube.next(WatchEndpoint(videoId = currentMeta.id)).getOrNull()?.relatedEndpoint
+                                relEndpoint?.let { ep ->
+                                    YouTube.related(ep).getOrNull()?.songs
+                                        ?.map { it.toMediaItem() }
+                                        ?.filterExplicit(cachedHideExplicit)
+                                        ?.filterVideoSongs(cachedHideVideoSongs)
+                                }
+                            }.getOrNull().orEmpty()
+                        } else {
+                            emptyList()
+                        }
+                        val reanchoredIds = reanchoredItems.mapTo(HashSet()) { it.mediaId }
+
+                        val candidates = (reanchoredItems + pageItems)
+                            .filter { it.mediaId !in existingIds }
+                            .distinctBy { it.mediaId }
+
+                        if (candidates.isEmpty() || currentQueue !is YouTubeQueue) {
+                            return@withContext candidates
+                        }
+
+                        val topArtistWeights = runCatching {
+                            database.mostPlayedArtists(java.time.LocalDateTime.now().minusWeeks(4), limit = 25)
+                                .first()
+                                .mapIndexed { idx, artist -> artist.id to (1.8f - idx * 0.05f).coerceAtLeast(0.4f) }
+                                .toMap()
+                        }.getOrDefault(emptyMap())
+
+                        val baseScores = candidates.associate { item ->
+                            var score = 0f
+                            val itemArtists = item.metadata?.artists?.mapNotNull { it.id }.orEmpty()
+                            if (itemArtists.any { it in currentArtistIds }) score += 2.6f
+                            if (itemArtists.any { it in recentArtistIds }) score += 1.8f
+                            val tasteWeight = itemArtists.maxOfOrNull { topArtistWeights[it] ?: 0f } ?: 0f
+                            score += tasteWeight * 1.5f
+                            if (item.mediaId in reanchoredIds) score += 2.2f
+                            item.mediaId to score
+                        }
+
+                        // Greedy rerank with per-artist diversity penalty (max ~2 per artist in batch)
+                        val remaining = candidates.toMutableList()
+                        val ranked = mutableListOf<MediaItem>()
+                        val artistCounts = HashMap<String, Int>()
+                        val batchLimit = 15
+
+                        while (ranked.size < batchLimit && remaining.isNotEmpty()) {
+                            val best = remaining.maxByOrNull { item ->
+                                val primaryArtist = item.metadata?.artists?.firstOrNull()?.id
+                                val repeats = if (primaryArtist != null) artistCounts[primaryArtist] ?: 0 else 0
+                                (baseScores[item.mediaId] ?: 0f) - repeats * 2.4f
+                            } ?: break
+                            remaining.remove(best)
+                            ranked.add(best)
+                            best.metadata?.artists?.firstOrNull()?.id?.let { artistId ->
+                                artistCounts[artistId] = (artistCounts[artistId] ?: 0) + 1
+                            }
+                        }
+                        ranked
                     }
                 if (player.playbackState != STATE_IDLE && mediaItems.isNotEmpty()) {
                     player.addMediaItems(mediaItems)
                     if (player.shuffleModeEnabled) {
                         applyShuffleOrder(player.currentMediaItemIndex, player.mediaItemCount, cachedShufflePlaylistFirst)
                     }
+                }
+                } finally {
+                    isAutoLoadingMore = false
                 }
             }
         }

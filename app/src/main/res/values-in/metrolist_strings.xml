@@ -205,10 +205,10 @@
     <string name="wrapped_total_artists_subtitle">artis unik!</string>
     <string name="wrapped_total_songs_title">Anda telah mendengarkan</string>
     <string name="wrapped_total_songs_subtitle">lagu unik!</string>
-    <string name="wrapped_intro_title">METROLIST</string>
+    <string name="wrapped_intro_title">SONGFY</string>
     <string name="wrapped_intro_subtitle">saatnya melihat apa yang telah Anda dengarkan sepanjang tahun ini…</string>
     <string name="wrapped_intro_button">ayo mulai!</string>
-    <string name="wrapped_logo_content_description">Logo Metrolist</string>
+    <string name="wrapped_logo_content_description">Logo Songfy</string>
     <string name="wrapped_year">2025</string>
     <string name="wrapped_ready_title">WRAPPED ANDA SUDAH SIAP!</string>
     <string name="wrapped_ready_subtitle">Saatnya melihat apa yang Anda sukai sepanjang tahun ini…</string>
@@ -230,7 +230,7 @@
     <string name="google_cast">Google Cast</string>
     <string name="google_cast_description">Kirim audio ke Chromecast dan perangkat berkemampuan Cast lainnya</string>
     <string name="last_fm_send_likes">Sinkronkan Loved dan Unloved</string>
-    <string name="last_fm_send_likes_description">Love atau unlove lagu di Last.fm saat Anda menyukai atau tidak menyukai lagu di Metrolist</string>
+    <string name="last_fm_send_likes_description">Love atau unlove lagu di Last.fm saat Anda menyukai atau tidak menyukai lagu di Songfy</string>
     <string name="logging_in">Sedang login…</string>
     <string name="hide_video_songs">Sembunyikan video musik</string>
     <string name="details_desc">Lihat detail lagu</string>
@@ -262,7 +262,7 @@
     <string name="pause_music_when_media_is_muted">Jeda musik saat media dibisukan</string>
     <string name="album_art">Sampul album</string>
     <string name="no_song_playing">Tidak ada lagu yang sedang diputar</string>
-    <string name="tap_to_open">Ketuk untuk membuka Metrolist</string>
+    <string name="tap_to_open">Ketuk untuk membuka Songfy</string>
     <string name="previous">Sebelumnya</string>
     <string name="play_pause">Putar/Jeda</string>
     <string name="next">Selanjutnya</string>
@@ -358,7 +358,7 @@
     <string name="crash_description">Terjadi kesalahan tak terduga. Harap bagikan laporan crash untuk membantu kami memperbaiki masalah ini</string>
     <string name="crash_share_logs">Bagikan log</string>
     <string name="crash_share_title">Bagikan laporan crash</string>
-    <string name="crash_report_subject">Laporan crash Metrolist</string>
+    <string name="crash_report_subject">Laporan crash Songfy</string>
     <string name="crash_close">Tutup</string>
     <string name="crash_no_log">Tidak ada log crash yang tersedia</string>
     <string name="palette_dynamic">Dinamis</string>
@@ -388,7 +388,7 @@
     <string name="cd_system_mode">Mode sistem</string>
     <string name="cd_palette_item">palet %1$s</string>
     <string name="not_playing">Tidak ada lagu yang diputar</string>
-    <string name="tap_to_play">Ketuk untuk membuka Metrolist</string>
+    <string name="tap_to_play">Ketuk untuk membuka Songfy</string>
     <string name="widget_music_player">Pemutar Musik</string>
     <string name="widget_turntable">Meja putar</string>
     <string name="together">Bersama</string>
@@ -470,7 +470,7 @@
     <string name="clear_recognition_history_confirm">Apakah Anda yakin ingin menghapus semua riwayat pengenalan?</string>
     <string name="delete_from_history">Hapus dari riwayat</string>
     <string name="re_listen">Dengarkan ulang</string>
-    <string name="play_on_app">Putar di Metrolist</string>
+    <string name="play_on_app">Putar di Songfy</string>
     <string name="map_csv_columns">Petakan kolom CSV</string>
     <string name="first_row_is_header">Baris pertama adalah header</string>
     <string name="artist_name_column">Kolom nama artis</string>
@@ -487,7 +487,7 @@
     <string name="discord_buttons">Tombol</string>
     <string name="discord_button_1">Tombol 1</string>
     <string name="discord_button_2">Tombol 2</string>
-    <string name="discord_information_warning">Metrolist mengirimkan lagu yang sedang Anda putar ke Gateway Discord untuk memperbarui Rich Presence Anda. Semua data dikirim langsung dari perangkat Anda ke Discord (wss://gateway.discord.gg) — tanpa melibatkan server pihak ketiga. Token Anda tetap tersimpan di perangkat dan tidak pernah dibagikan. Namun, penggunaan token pengguna untuk koneksi Gateway tidak didukung secara resmi dan mungkin melanggar Ketentuan Layanan Discord. Lanjutkan dengan risiko Anda sendiri!</string>
+    <string name="discord_information_warning">Songfy mengirimkan lagu yang sedang Anda putar ke Gateway Discord untuk memperbarui Rich Presence Anda. Semua data dikirim langsung dari perangkat Anda ke Discord (wss://gateway.discord.gg) — tanpa melibatkan server pihak ketiga. Token Anda tetap tersimpan di perangkat dan tidak pernah dibagikan. Namun, penggunaan token pengguna untuk koneksi Gateway tidak didukung secara resmi dan mungkin melanggar Ketentuan Layanan Discord. Lanjutkan dengan risiko Anda sendiri!</string>
     <string name="discord_activity_type">Jenis aktivitas</string>
     <string name="discord_activity_playing">Bermain</string>
     <string name="discord_activity_listening">Mendengarkan</string>
@@ -602,7 +602,7 @@
     <string name="credits_view_repo">Lihat repositori</string>
     <string name="buy_mo_a_coffee">Belikan saya kopi!</string>
     <string name="community_and_info">Komunitas &amp; Info</string>
-    <string name="metrolist">METROLIST</string>
+    <string name="metrolist">SONGFY</string>
     <string name="wanna_play_favorite_song">Ingin memutar lagu favorit mereka?</string>
     <string name="yeah">Tentu!</string>
     <string name="stands_with_palestine">Proyek ini berpihak pada Palestina 🇵🇸</string>
@@ -739,7 +739,7 @@
     <string name="recognition_notification_processing">Mengidentifikasi…</string>
     <string name="recognition_notification_no_match">Tidak ditemukan kecocokan</string>
     <string name="recognition_notification_failed">Pengenalan gagal</string>
-    <string name="listen_on_metrolist">Dengarkan di Metrolist</string>
+    <string name="listen_on_metrolist">Dengarkan di Songfy</string>
     <string name="android_auto">Android Auto</string>
     <string name="android_auto_visible_sections">Bagian yang terlihat</string>
     <string name="android_auto_reorder_hint">Ketuk bagian untuk mengaktifkan atau menonaktifkannya.\nTekan lama gagang seret untuk mengurutkan ulang. Bagian pertama akan ditampilkan secara default</string>
@@ -855,7 +855,7 @@
     <string name="playlist_position_end">Akhir daftar putar</string>
     <string name="playlist_position_end_desc">Lagu yang baru ditambahkan muncul setelah lagu yang sudah ada</string>
     <string name="playlist_created_locally">Sinkronisasi YouTube gagal. Daftar putar dibuat secara lokal.</string>
-    <string name="update_available_message">Metrolist %s siap diunduh.</string>
+    <string name="update_available_message">Songfy %s siap diunduh.</string>
     <string name="update_action">Perbarui</string>
     <string name="error_no_internet_connection">Tidak ada koneksi internet</string>
     <string name="error_offline_playback">Anda sedang offline. Hubungkan ke internet, atau putar trek yang telah diunduh untuk penggunaan offline.</string>

@@ -6,7 +6,11 @@
 package com.metrolist.music.ui.screens.recognition
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.speech.RecognizerIntent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -92,6 +96,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 
+private enum class RecognitionMode {
+    MUSIC,
+    LYRICS,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecognitionScreen(
@@ -125,6 +134,8 @@ fun RecognitionScreen(
     val recognitionStatus by com.metrolist.music.recognition.MusicRecognitionService.recognitionStatus
         .collectAsStateWithLifecycle()
 
+    var recognitionMode by remember { mutableStateOf(RecognitionMode.MUSIC) }
+
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -144,6 +155,37 @@ fun RecognitionScreen(
                 }
             }
         }
+
+    val voiceLyricLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult(),
+        ) { activityResult ->
+            if (activityResult.resultCode == Activity.RESULT_OK) {
+                val spoken = activityResult.data
+                    ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                    ?.firstOrNull()
+                    ?.trim()
+                if (!spoken.isNullOrEmpty()) {
+                    navController.navigate(SearchRoutes.resultRoute(spoken))
+                }
+            }
+        }
+
+    fun startVoiceLyricSearch() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Nyanyikan atau ucapkan potongan lirik...")
+        }
+        runCatching {
+            voiceLyricLauncher.launch(intent)
+        }.onFailure {
+            Toast.makeText(
+                context,
+                "Pencarian suara tidak tersedia di perangkat ini",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
 
     fun startRecognition() {
         if (hasPermission) {
@@ -242,7 +284,16 @@ fun RecognitionScreen(
             ) { status ->
                 when (status) {
                     is RecognitionStatus.Ready -> {
-                        ReadyState(onStartRecognition = ::startRecognition)
+                        ReadyState(
+                            mode = recognitionMode,
+                            onModeChange = { recognitionMode = it },
+                            onPrimaryAction = {
+                                when (recognitionMode) {
+                                    RecognitionMode.MUSIC -> startRecognition()
+                                    RecognitionMode.LYRICS -> startVoiceLyricSearch()
+                                }
+                            },
+                        )
                     }
 
                     is RecognitionStatus.Listening -> {
@@ -280,6 +331,7 @@ fun RecognitionScreen(
                             onTryAgain = {
                                 startRecognition()
                             },
+                            onStartVoiceLyricSearch = ::startVoiceLyricSearch,
                         )
                     }
 
@@ -298,10 +350,14 @@ fun RecognitionScreen(
 }
 
 @Composable
-private fun ReadyState(onStartRecognition: () -> Unit) {
+private fun ReadyState(
+    mode: RecognitionMode,
+    onModeChange: (RecognitionMode) -> Unit,
+    onPrimaryAction: () -> Unit,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Box(
             modifier =
@@ -317,7 +373,7 @@ private fun ReadyState(onStartRecognition: () -> Unit) {
                                     Color.Transparent,
                                 ),
                         ),
-                    ).clickable { onStartRecognition() },
+                    ).clickable { onPrimaryAction() },
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -329,7 +385,9 @@ private fun ReadyState(onStartRecognition: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.mic),
+                    painter = painterResource(
+                        if (mode == RecognitionMode.MUSIC) R.drawable.mic else R.drawable.lyrics,
+                    ),
                     contentDescription = null,
                     modifier = Modifier.size(64.dp),
                     tint = MaterialTheme.colorScheme.onPrimary,
@@ -338,10 +396,53 @@ private fun ReadyState(onStartRecognition: () -> Unit) {
         }
 
         Text(
-            text = stringResource(R.string.tap_to_recognize),
+            text = if (mode == RecognitionMode.MUSIC) {
+                stringResource(R.string.tap_to_recognize)
+            } else {
+                "Ketuk untuk menyanyikan lirik"
+            },
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
+
+        // Unified iOS-style segmented pill switch (Musik | Nyanyi)
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf(
+                RecognitionMode.MUSIC to "Musik",
+                RecognitionMode.LYRICS to "Nyanyi",
+            ).forEach { (itemMode, label) ->
+                val selected = mode == itemMode
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        )
+                        .clickable { onModeChange(itemMode) }
+                        .padding(horizontal = 22.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -599,10 +700,11 @@ private fun SuccessState(
 private fun NoMatchState(
     message: String,
     onTryAgain: () -> Unit,
+    onStartVoiceLyricSearch: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Box(
             modifier =
@@ -627,21 +729,32 @@ private fun NoMatchState(
         )
 
         Text(
-            text = message,
+            text = "$message\n\nCatatan: Shazam hanya mengenali audio lagu asli. Jika ingin menyanyi, gunakan tombol Nyanyikan Lirik di bawah.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 32.dp),
+            modifier = Modifier.padding(horizontal = 28.dp),
         )
 
-        Button(onClick = onTryAgain) {
-            Icon(
-                painter = painterResource(R.drawable.refresh),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(stringResource(R.string.try_again))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onTryAgain) {
+                Icon(
+                    painter = painterResource(R.drawable.refresh),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.try_again))
+            }
+            FilledTonalButton(onClick = onStartVoiceLyricSearch) {
+                Icon(
+                    painter = painterResource(R.drawable.lyrics),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Nyanyikan Lirik")
+            }
         }
     }
 }

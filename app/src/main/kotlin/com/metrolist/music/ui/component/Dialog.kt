@@ -82,13 +82,14 @@ fun DefaultDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(
-            modifier = Modifier
-                .padding(24.dp)
-                .widthIn(min = 280.dp, max = 520.dp)
-                .songfyGlassContainer(dark = isDark, shape = dialogShape),
-        ) {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
+        CompositionLocalProvider(com.songfy.ui.LocalSongfyBackdrop provides null) {
+            Box(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .widthIn(min = 280.dp, max = 520.dp)
+                    .songfyGlassContainer(dark = isDark, shape = dialogShape),
+            ) {
+                CompositionLocalProvider(LocalContentColor provides contentColor) {
                 Column(
                     horizontalAlignment = horizontalAlignment,
                     modifier = modifier.padding(24.dp),
@@ -135,6 +136,7 @@ fun DefaultDialog(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -271,21 +273,23 @@ fun ListDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(
-            modifier = Modifier
-                .padding(24.dp)
-                .widthIn(min = 280.dp, max = 520.dp)
-                .songfyGlassContainer(dark = isDark, shape = dialogShape),
-        ) {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier =
-                        modifier
-                            .padding(vertical = 24.dp)
-                            .imePadding(),
-                ) {
-                    LazyColumn(content = content)
+        CompositionLocalProvider(com.songfy.ui.LocalSongfyBackdrop provides null) {
+            Box(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .widthIn(min = 280.dp, max = 520.dp)
+                    .songfyGlassContainer(dark = isDark, shape = dialogShape),
+            ) {
+                CompositionLocalProvider(LocalContentColor provides contentColor) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier =
+                            modifier
+                                .padding(vertical = 24.dp)
+                                .imePadding(),
+                    ) {
+                        LazyColumn(content = content)
+                    }
                 }
             }
         }

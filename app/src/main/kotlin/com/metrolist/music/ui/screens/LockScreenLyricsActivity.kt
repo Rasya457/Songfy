@@ -64,6 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -85,6 +86,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -98,12 +100,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import com.metrolist.music.R
+import com.metrolist.music.constants.KeepScreenOn
 import com.metrolist.music.constants.LiquidGlassEnabledKey
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.db.entities.LyricsEntity
+import com.metrolist.music.extensions.currentMetadata
 import com.metrolist.music.lyrics.LrcParser
 import com.metrolist.music.lyrics.LyricsHelper
+import com.metrolist.music.lyrics.LyricsUtils
 import com.metrolist.music.lyrics.SyncLine
+import com.metrolist.music.lyrics.toSyncLine
 import com.metrolist.music.playback.MusicService
 import com.metrolist.music.utils.rememberPreference
 import com.songfy.ui.LocalSongfyBackdrop
@@ -143,21 +149,20 @@ class LockScreenLyricsActivity : ComponentActivity() {
         }
     }
 
-    private fun navigateToPhoneHomeAndFinish() {
-        runCatching {
-            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(homeIntent)
+    private fun dismissLockScreen() {
+        // Because LockScreenLyricsActivity runs in its own singleInstance task (taskAffinity=""),
+        // finishAndRemoveTask() returns straight to whichever app (or Home) was open before locking.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            finishAndRemoveTask()
+        } else {
+            finish()
         }
-        finish()
     }
 
     private val unlockReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_USER_PRESENT) {
-                navigateToPhoneHomeAndFinish()
+                dismissLockScreen()
             }
         }
     }
@@ -202,23 +207,23 @@ class LockScreenLyricsActivity : ComponentActivity() {
                     onSwipeUpToUnlock = {
                         val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
                         if (km == null || !km.isKeyguardLocked) {
-                            navigateToPhoneHomeAndFinish()
+                            dismissLockScreen()
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             if (!km.isKeyguardSecure) {
                                 km.requestDismissKeyguard(this, null)
-                                navigateToPhoneHomeAndFinish()
+                                dismissLockScreen()
                             } else {
                                 km.requestDismissKeyguard(
                                     this,
                                     object : KeyguardManager.KeyguardDismissCallback() {
                                         override fun onDismissSucceeded() {
-                                            navigateToPhoneHomeAndFinish()
+                                            dismissLockScreen()
                                         }
                                     },
                                 )
                             }
                         } else {
-                            navigateToPhoneHomeAndFinish()
+                            dismissLockScreen()
                         }
                     },
                 )
@@ -245,7 +250,9 @@ private fun LockScreenLyricsContent(
     lyricsHelper: LyricsHelper,
     onSwipeUpToUnlock: () -> Unit,
 ) {
-    val mediaMetadata = service?.currentMediaMetadata?.collectAsStateWithLifecycle()?.value
+    val flowMetadata = service?.currentMediaMetadata?.collectAsStateWithLifecycle()?.value
+    var playerMetadata by remember { mutableStateOf<com.metrolist.music.models.MediaMetadata?>(null) }
+    val mediaMetadata = flowMetadata ?: playerMetadata
     val player = service?.player
     val coroutineScope = rememberCoroutineScope()
 
@@ -262,6 +269,21 @@ private fun LockScreenLyricsContent(
 
     val listState = rememberLazyListState()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val isKeepScreenOn by rememberPreference(KeepScreenOn, defaultValue = false)
+    val activityWindow = (LocalContext.current as? android.app.Activity)?.window
+
+    DisposableEffect(activityWindow, isKeepScreenOn, isPlaying) {
+        if (activityWindow != null) {
+            if (isKeepScreenOn && isPlaying) {
+                activityWindow.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activityWindow.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+        onDispose {
+            activityWindow?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     // Update clock & date only while lock screen is visible/resumed (zero battery drain when screen is off)
     LaunchedEffect(lifecycleOwner) {
@@ -277,46 +299,60 @@ private fun LockScreenLyricsContent(
         }
     }
 
-    // Observe lyrics continuously from Room (parsed off Main thread) and fetch in parallel if not yet cached
-    LaunchedEffect(mediaMetadata?.id) {
+    // Observe lyrics continuously from Room (parsed off Main thread) and fetch whenever resumed & missing
+    LaunchedEffect(mediaMetadata?.id, lifecycleOwner) {
         val meta = mediaMetadata ?: return@LaunchedEffect
         parsedLyrics = emptyList()
         currentPositionMs = 0L
-        runCatching { listState.scrollToItem(0) }
+        listState.requestScrollToItem(0)
 
-        var fetchTriggered = false
         var lastRawLyrics: String? = null
-        database.lyrics(meta.id).collect { entity ->
-            val raw = entity?.lyrics
-            if (!raw.isNullOrBlank() && raw != LyricsEntity.LYRICS_NOT_FOUND) {
-                if (raw != lastRawLyrics) {
-                    lastRawLyrics = raw
-                    parsedLyrics = withContext(Dispatchers.Default) { parseLockScreenLyrics(raw) }
-                }
-            } else if (!fetchTriggered) {
-                fetchTriggered = true
-                launch(Dispatchers.IO) {
-                    val fetched = runCatching { lyricsHelper.getLyrics(meta) }.getOrNull()
+
+        val fetchJob = launch {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                if (parsedLyrics.isEmpty()) {
+                    val fetched = withContext(Dispatchers.IO) {
+                        runCatching { lyricsHelper.getLyrics(meta) }.getOrNull()
+                    }
                     if (fetched != null && fetched.lyrics.isNotBlank() && fetched.lyrics != LyricsEntity.LYRICS_NOT_FOUND) {
                         val parsed = withContext(Dispatchers.Default) { parseLockScreenLyrics(fetched.lyrics) }
-                        withContext(Dispatchers.Main) {
+                        if (parsed.isNotEmpty()) {
                             lastRawLyrics = fetched.lyrics
                             parsedLyrics = parsed
                         }
-                        runCatching {
-                            database.query {
-                                upsert(
-                                    LyricsEntity(
-                                        id = meta.id,
-                                        lyrics = fetched.lyrics,
-                                        provider = fetched.provider,
-                                    ),
-                                )
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                database.query {
+                                    upsert(
+                                        LyricsEntity(
+                                            id = meta.id,
+                                            lyrics = fetched.lyrics,
+                                            provider = fetched.provider,
+                                        ),
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+
+        try {
+            database.lyrics(meta.id).collect { entity ->
+                val raw = entity?.lyrics
+                if (!raw.isNullOrBlank() && raw != LyricsEntity.LYRICS_NOT_FOUND) {
+                    if (raw != lastRawLyrics) {
+                        lastRawLyrics = raw
+                        val parsed = withContext(Dispatchers.Default) { parseLockScreenLyrics(raw) }
+                        if (parsed.isNotEmpty()) {
+                            parsedLyrics = parsed
+                        }
+                    }
+                }
+            }
+        } finally {
+            fetchJob.cancel()
         }
     }
 
@@ -325,13 +361,14 @@ private fun LockScreenLyricsContent(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 if (player != null) {
+                    playerMetadata = player.currentMetadata
                     if (!isSeeking) {
                         currentPositionMs = player.currentPosition.coerceAtLeast(0L)
                     }
                     durationMs = player.duration.coerceAtLeast(0L)
                     isPlaying = player.isPlaying
                 }
-                delay(if (isPlaying) 100L else 500L)
+                delay(if (isPlaying) 33L else 300L)
             }
         }
     }
@@ -345,31 +382,31 @@ private fun LockScreenLyricsContent(
     val isUnsynced = parsedLyrics.firstOrNull()?.startMs?.let { it < 0L } == true
     val activeIndex = remember(parsedLyrics, effectivePosMs, isUnsynced) {
         if (parsedLyrics.isEmpty() || isUnsynced) -1
-        else parsedLyrics.indexOfLast { effectivePosMs + 80L >= it.startMs }
+        else parsedLyrics.indexOfLast { effectivePosMs + 350L >= it.startMs }
     }
 
-    // Smoothly glide active lyric line to vertical center
+    // Smoothly glide active lyric line into upper-center framing (matching reference: ~2 above, 3-4 below)
     LaunchedEffect(activeIndex, parsedLyrics) {
         if (activeIndex !in parsedLyrics.indices) return@LaunchedEffect
         val activeItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
         if (activeItem != null) {
             val vp = listState.layoutInfo
-            val targetOffset = (vp.viewportStartOffset + vp.viewportEndOffset - activeItem.size) / 2f
+            val targetOffset = vp.viewportStartOffset + (vp.viewportEndOffset - vp.viewportStartOffset) * 0.38f - activeItem.size / 2f
             listState.animateScrollBy(
                 value = activeItem.offset - targetOffset,
-                animationSpec = spring(dampingRatio = 0.92f, stiffness = 125f),
+                animationSpec = tween(durationMillis = 520, easing = SmoothLyricEasing),
             )
         } else {
             val vpHeight = listState.layoutInfo.viewportSize.height
-            val approxOffset = if (vpHeight > 0) -(vpHeight * 0.34f).toInt() else -160
+            val approxOffset = if (vpHeight > 0) -(vpHeight * 0.28f).toInt() else -120
             listState.animateScrollToItem(index = activeIndex, scrollOffset = approxOffset)
             val settled = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
             if (settled != null) {
                 val vp = listState.layoutInfo
-                val targetOffset = (vp.viewportStartOffset + vp.viewportEndOffset - settled.size) / 2f
+                val targetOffset = vp.viewportStartOffset + (vp.viewportEndOffset - vp.viewportStartOffset) * 0.38f - settled.size / 2f
                 listState.animateScrollBy(
                     value = settled.offset - targetOffset,
-                    animationSpec = spring(dampingRatio = 0.92f, stiffness = 125f),
+                    animationSpec = tween(durationMillis = 480, easing = SmoothLyricEasing),
                 )
             }
         }
@@ -473,28 +510,28 @@ private fun LockScreenLyricsContent(
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom))
                 .padding(horizontal = 20.dp),
         ) {
-            val clockFontSize = (maxWidth.value * 0.205f).coerceIn(56f, 80f).sp
-            val lyricFontSize = (maxWidth.value * 0.068f).coerceIn(22f, 27f).sp
-            val lyricLineHeight = (lyricFontSize.value * 1.26f).sp
+            val clockFontSize = (maxWidth.value * 0.215f).coerceIn(64f, 84f).sp
+            val lyricFontSize = (maxWidth.value * 0.074f).coerceIn(25f, 30f).sp
+            val lyricLineHeight = (lyricFontSize.value * 1.20f).sp
 
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // Small padlock icon + Date + Ultra-bold large Clock
+                // Small padlock icon + Date + Ultra-bold large Clock matching reference photo
                 Icon(
                     painter = painterResource(R.drawable.lock),
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                 )
-                Spacer(modifier = Modifier.height(7.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = currentDateText,
                     color = Color.White.copy(alpha = 0.96f),
-                    fontSize = 15.5.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.2).sp,
                 )
@@ -504,32 +541,19 @@ private fun LockScreenLyricsContent(
                     color = Color.White,
                     fontSize = clockFontSize,
                     fontWeight = FontWeight.Black,
-                    letterSpacing = (-2.8).sp,
-                    lineHeight = (clockFontSize.value * 1.02f).sp,
+                    letterSpacing = (-3.0).sp,
+                    lineHeight = (clockFontSize.value * 0.98f).sp,
                     maxLines = 1,
                     softWrap = false,
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Center Real-Time Synced Lyrics with vertical fade mask & depth-of-field blur
+                // Center Real-Time Synced Lyrics with depth-of-field blur & smooth opacity
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0.0f to Color.Transparent,
-                                    0.12f to Color.Black,
-                                    0.86f to Color.Black,
-                                    1.0f to Color.Transparent,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                        },
+                        .weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (parsedLyrics.isEmpty()) {
@@ -538,20 +562,20 @@ private fun LockScreenLyricsContent(
                         LazyColumn(
                             state = listState,
                             userScrollEnabled = false,
-                            contentPadding = PaddingValues(vertical = 76.dp),
+                            contentPadding = PaddingValues(vertical = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            // Intro dots before first lyric line starts
-                            if (!isUnsynced && activeIndex < 0) {
+                            // Intro dots only when there is a real instrumental intro (>= 3.5s before first lyric)
+                            val firstStartMs = parsedLyrics.firstOrNull()?.startMs ?: 0L
+                            if (!isUnsynced && activeIndex < 0 && firstStartMs >= 3500L) {
                                 item(key = "intro_dots") {
-                                    val firstStart = parsedLyrics.first().startMs.coerceAtLeast(1L)
-                                    val introProgress = (effectivePosMs.toFloat() / firstStart.toFloat()).coerceIn(0f, 1f)
+                                    val introProgress = (effectivePosMs.toFloat() / firstStartMs.toFloat()).coerceIn(0f, 1f)
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 6.dp),
+                                            .padding(vertical = 4.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         LockScreenTransitionDots(progress = introProgress)
@@ -564,54 +588,61 @@ private fun LockScreenLyricsContent(
                                 key = { idx, line -> "${idx}_${line.startMs}" },
                             ) { index, line ->
                                 val isCurrent = index == activeIndex
-                                val isPrevious = activeIndex > 0 && index == activeIndex - 1
-                                val distance = if (activeIndex >= 0) abs(index - activeIndex) else index
+                                val delta = if (activeIndex >= 0) index - activeIndex else index
+                                val absDelta = abs(delta)
 
+                                // Continuous smooth distance falloff (no hard line cutoff, fills full viewport cleanly)
                                 val targetAlpha = when {
                                     isUnsynced -> 0.90f
-                                    isCurrent -> 0.96f
-                                    distance == 1 -> 0.56f
-                                    distance == 2 -> 0.42f
-                                    else -> 0.24f
+                                    absDelta == 0 -> 0.98f
+                                    absDelta == 1 -> 0.62f
+                                    absDelta == 2 -> 0.40f
+                                    absDelta == 3 -> 0.26f
+                                    else -> 0.14f
                                 }
                                 val animatedAlpha by animateFloatAsState(
                                     targetValue = targetAlpha,
-                                    animationSpec = tween(480, easing = SmoothLyricEasing),
+                                    animationSpec = tween(520, easing = SmoothLyricEasing),
                                     label = "lockLyricAlpha",
                                 )
 
                                 val targetScale = when {
                                     isUnsynced -> 1f
-                                    isCurrent -> 1.03f
-                                    distance == 1 -> 0.98f
-                                    else -> 0.95f
+                                    absDelta == 0 -> 1.02f
+                                    absDelta == 1 -> 0.98f
+                                    absDelta == 2 -> 0.96f
+                                    else -> 0.94f
                                 }
                                 val animatedScale by animateFloatAsState(
                                     targetValue = targetScale,
-                                    animationSpec = spring(dampingRatio = 0.86f, stiffness = 200f),
+                                    animationSpec = tween(520, easing = SmoothLyricEasing),
                                     label = "lockLyricScale",
                                 )
 
                                 val targetBlur = when {
-                                    isUnsynced || isCurrent -> 0.dp
-                                    distance == 1 -> 0.8.dp
-                                    distance == 2 -> 1.7.dp
-                                    else -> 2.6.dp
+                                    isUnsynced || absDelta == 0 -> 0.dp
+                                    absDelta == 1 -> 0.5.dp
+                                    absDelta == 2 -> 1.5.dp
+                                    absDelta == 3 -> 2.0.dp
+                                    else -> 2.5.dp
                                 }
                                 val animatedBlur by animateDpAsState(
                                     targetValue = targetBlur,
-                                    animationSpec = tween(480, easing = FastOutSlowInEasing),
+                                    animationSpec = tween(520, easing = SmoothLyricEasing),
                                     label = "lockLyricBlur",
                                 )
 
-                                // Show 3-dot indicator between previous line and active line (matches screenshot)
-                                val showTransitionDots = !isUnsynced && isPrevious
-                                val transitionProgress = if (showTransitionDots && activeIndex in parsedLyrics.indices) {
-                                    val activeLine = parsedLyrics[activeIndex]
-                                    val lineSpan = (activeLine.endMs - activeLine.startMs).coerceAtLeast(1500L)
-                                    ((effectivePosMs - activeLine.startMs).toFloat() / lineSpan.toFloat()).coerceIn(0.15f, 1f)
+                                // Show 3-dot indicator ONLY during genuine instrumental interludes (>= 4.5s gap);
+                                // guard with isCurrent && gapMs >= 4500L so non-active rows don't recompose on every 33ms tick.
+                                val nextStart = parsedLyrics.getOrNull(index + 1)?.startMs
+                                val lineEnd = line.words.lastOrNull()?.endMs ?: line.endMs
+                                val gapMs = if (nextStart != null) nextStart - lineEnd else 0L
+                                val hasInterlude = !isUnsynced && isCurrent && gapMs >= 4500L
+                                val showInterludeDots = hasInterlude && effectivePosMs > lineEnd
+                                val interludeProgress = if (showInterludeDots && gapMs > 0L) {
+                                    ((effectivePosMs - lineEnd).toFloat() / gapMs.toFloat()).coerceIn(0f, 1f)
                                 } else {
-                                    0.35f
+                                    0f
                                 }
 
                                 Column(
@@ -624,11 +655,11 @@ private fun LockScreenLyricsContent(
                                         fontSize = lyricFontSize,
                                         lineHeight = lyricLineHeight,
                                         fontWeight = FontWeight.Bold,
-                                        letterSpacing = (-0.4).sp,
+                                        letterSpacing = (-0.5).sp,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 8.dp)
+                                            .padding(horizontal = 6.dp)
                                             .graphicsLayer {
                                                 alpha = animatedAlpha
                                                 scaleX = animatedScale
@@ -645,17 +676,17 @@ private fun LockScreenLyricsContent(
                                     )
 
                                     AnimatedVisibility(
-                                        visible = showTransitionDots,
+                                        visible = showInterludeDots,
                                         enter = fadeIn(tween(340)) + expandVertically(tween(340, easing = SmoothLyricEasing)),
                                         exit = fadeOut(tween(260)) + shrinkVertically(tween(260, easing = SmoothLyricEasing)),
                                     ) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(top = 22.dp),
+                                                .padding(top = 18.dp),
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            LockScreenTransitionDots(progress = transitionProgress)
+                                            LockScreenTransitionDots(progress = interludeProgress)
                                         }
                                     }
                                 }
@@ -690,7 +721,7 @@ private fun LockScreenLyricsContent(
                             .clip(cardShape)
                             .background(Color(0x2E1A1B1F))
                             .border(0.9.dp, borderBrush, cardShape)
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -706,8 +737,8 @@ private fun LockScreenLyricsContent(
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(50.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .size(54.dp)
+                                        .clip(RoundedCornerShape(13.dp))
                                         .background(Color.White.copy(alpha = 0.12f)),
                                 )
                             }
@@ -940,10 +971,20 @@ private fun LockScreenTransitionDots(progress: Float) {
 }
 
 private fun parseLockScreenLyrics(raw: String): List<SyncLine> {
-    val synced = LrcParser.parse(raw)
+    val text = raw.trim()
+    // Same pipeline as the in-app lyrics view so every provider format (LRC, rich-sync, TTML-derived) works
+    val entries = runCatching { LyricsUtils.parseLyrics(text) }.getOrDefault(emptyList())
+    if (entries.isNotEmpty()) {
+        return entries
+            .mapIndexed { idx, entry ->
+                entry.toSyncLine(entries.getOrNull(idx + 1)?.time ?: (entry.time + 3500L))
+            }
+            .filter { it.text.isNotBlank() }
+    }
+    val synced = LrcParser.parse(text).filter { it.text.isNotBlank() }
     if (synced.isNotEmpty()) return synced
-    return raw.lineSequence()
-        .map { it.replace(Regex("""\[[^\]]*]|\{[^}]*}"""), "").trim() }
+    return text.lineSequence()
+        .map { it.replace(Regex("""\[[^\]]*]|\{[^}]*}|<[^>]*>"""), "").trim() }
         .filter { it.isNotEmpty() }
         .map { SyncLine(startMs = -1L, endMs = -1L, text = it) }
         .toList()

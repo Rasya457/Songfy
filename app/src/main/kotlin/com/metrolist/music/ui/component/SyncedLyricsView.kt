@@ -17,9 +17,11 @@ package com.metrolist.music.ui.component
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -62,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -116,7 +119,33 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // Lead time in ms before line start so highlight stays perfectly in sync with perceived vocal
-private const val LINE_SWITCH_LEAD_MS = 60L
+private const val LINE_SWITCH_LEAD_MS = 140L
+
+/**
+ * One easing curve drives every handover (scroll, dim, blur, scale) so a line change reads as a
+ * single fluid movement. Long, soft settle (iOS-style deceleration) rather than a quick snap.
+ */
+private val LyricEasing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+private const val LYRIC_SETTLE_MS = 750
+private const val SCROLL_LEAD_MIN_MS = 650L
+private const val SCROLL_LEAD_MAX_MS = 950L
+
+/** Rows below the focused line trail it slightly, so spacing opens then closes like a wave. */
+private const val STAGGER_STEPS = 4
+private const val STAGGER_FRACTION = 0.09f
+
+private class LyricScrollRun(val id: Int, val delta: Float, val durationMs: Int) {
+    val spanMs: Float get() = durationMs * (1f + STAGGER_FRACTION * STAGGER_STEPS)
+}
+
+/** Scroll duration = the silence between the previous line ending and this line starting. */
+private fun scrollLead(lines: List<SyncLine>, activeIndex: Int): Int {
+    val current = lines.getOrNull(activeIndex) ?: return SCROLL_LEAD_MIN_MS.toInt()
+    val previous = lines.getOrNull(activeIndex - 1) ?: return SCROLL_LEAD_MIN_MS.toInt()
+    return (current.startMs - previous.endMs)
+        .coerceIn(SCROLL_LEAD_MIN_MS, SCROLL_LEAD_MAX_MS)
+        .toInt()
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -194,6 +223,19 @@ fun SyncedLyricsView(
     var isProgrammaticScroll by remember { mutableStateOf(false) }
     var userTouching by remember { mutableStateOf(false) }
 
+    // Published scroll journey, read per-row so nearby rows can trail it (stagger) without one
+    // animation object per row.
+    var lyricRun by remember(lines) { mutableStateOf(LyricScrollRun(0, 0f, LYRIC_SETTLE_MS)) }
+    val runElapsed = remember(lines) { mutableFloatStateOf(0f) }
+    LaunchedEffect(lyricRun.id) {
+        if (lyricRun.id == 0) return@LaunchedEffect
+        animate(
+            initialValue = 0f,
+            targetValue = lyricRun.spanMs,
+            animationSpec = tween(lyricRun.spanMs.toInt(), easing = LinearEasing),
+        ) { value, _ -> runElapsed.floatValue = value }
+    }
+
     val nestedScrollConnection = remember(listState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -241,9 +283,12 @@ fun SyncedLyricsView(
             if (activeItem != null) {
                 val viewport = listState.layoutInfo
                 val targetOffset = (viewport.viewportStartOffset + viewport.viewportEndOffset - activeItem.size) / 2f
+                val distance = activeItem.offset - targetOffset
+                val span = scrollLead(lines, activeIndex)
+                lyricRun = LyricScrollRun(lyricRun.id + 1, distance, span)
                 listState.animateScrollBy(
-                    value = activeItem.offset - targetOffset,
-                    animationSpec = spring(dampingRatio = 0.88f, stiffness = 175f),
+                    value = distance,
+                    animationSpec = tween(durationMillis = span, easing = LyricEasing),
                 )
             } else {
                 val vpHeight = listState.layoutInfo.viewportSize.height
@@ -259,7 +304,7 @@ fun SyncedLyricsView(
                     val targetOffset = (viewport.viewportStartOffset + viewport.viewportEndOffset - settled.size) / 2f
                     listState.animateScrollBy(
                         value = settled.offset - targetOffset,
-                        animationSpec = spring(dampingRatio = 0.88f, stiffness = 175f),
+                        animationSpec = tween(durationMillis = LYRIC_SETTLE_MS, easing = LyricEasing),
                     )
                 }
             }
@@ -343,9 +388,10 @@ fun SyncedLyricsView(
                 val showInterludeAfter = nextLine != null && (nextLine.startMs - line.endMs) >= 4500L
                 val isInterludeActive = isCurrent && showInterludeAfter && positionProvider() >= line.endMs
 
-                val lineTransitionDelay = (distance.coerceAtMost(4) * 28)
+                // Rows below the focus line trail the scroll slightly (wave), nearby rows only.
+                val behind = if (lyricRun.delta >= 0f) index - activeIndex else activeIndex - index
+                val staggerDelay = behind.coerceIn(0, STAGGER_STEPS) * STAGGER_FRACTION * lyricRun.durationMs
 
-                // Stagger nearby rows so the focus handoff reads as a wave, not a block.
                 val targetAlpha = when {
                     isCurrent -> 1.0f
                     distance == 1 -> 0.55f
@@ -354,11 +400,7 @@ fun SyncedLyricsView(
                 }
                 val animAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
-                    animationSpec = tween(
-                        durationMillis = 550,
-                        delayMillis = lineTransitionDelay,
-                        easing = FastOutSlowInEasing,
-                    ),
+                    animationSpec = tween(durationMillis = LYRIC_SETTLE_MS, easing = LyricEasing),
                     label = "lyricsLineAlpha",
                 )
 
@@ -370,10 +412,7 @@ fun SyncedLyricsView(
                 }
                 val animScale by animateFloatAsState(
                     targetValue = targetScale,
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 260f,
-                    ),
+                    animationSpec = tween(durationMillis = LYRIC_SETTLE_MS, easing = LyricEasing),
                     label = "lyricsLineScale",
                 )
 
@@ -388,11 +427,7 @@ fun SyncedLyricsView(
                 } else 0.dp
                 val blurRadius by animateDpAsState(
                     targetValue = targetBlurRadius,
-                    animationSpec = tween(
-                        durationMillis = 550,
-                        delayMillis = lineTransitionDelay,
-                        easing = FastOutSlowInEasing,
-                    ),
+                    animationSpec = tween(durationMillis = LYRIC_SETTLE_MS, easing = LyricEasing),
                     label = "lyricsLineBlur",
                 )
 
@@ -428,6 +463,16 @@ fun SyncedLyricsView(
                             alpha = effectiveAlpha
                             scaleX = effectiveScale
                             scaleY = effectiveScale
+                            translationY = if (staggerDelay <= 0f || isSelectionMode) {
+                                0f
+                            } else {
+                                val elapsed = runElapsed.floatValue
+                                val duration = lyricRun.durationMs.toFloat()
+                                lyricRun.delta * (
+                                    LyricEasing.transform((elapsed / duration).coerceIn(0f, 1f)) -
+                                        LyricEasing.transform(((elapsed - staggerDelay) / duration).coerceIn(0f, 1f))
+                                    )
+                            }
                         }
                         .let {
                             if (effectiveBlur > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

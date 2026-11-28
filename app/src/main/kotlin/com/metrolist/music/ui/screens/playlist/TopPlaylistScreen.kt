@@ -89,6 +89,7 @@ import com.metrolist.music.ui.component.DraggableScrollbar
 import com.metrolist.music.ui.component.EmptyPlaceholder
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.LocalMenuState
+import com.metrolist.music.ui.component.OverlayEditButton
 import com.metrolist.music.ui.component.SongListItem
 import com.metrolist.music.ui.component.SortHeader
 import com.metrolist.music.ui.menu.SelectionSongMenu
@@ -533,6 +534,7 @@ private fun TopPlaylistHeader(
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
     val downloadUtil = LocalDownloadUtil.current
+    val cover = rememberAutoPlaylistCover("top_$name")
 
     Column(
         modifier = modifier
@@ -555,12 +557,17 @@ private fun TopPlaylistHeader(
                 shape = RoundedCornerShape(3.dp)
             ) {
                 AsyncImage(
-                    model = songs[0].thumbnailUrl,
+                    model = cover.customCoverUrl ?: songs[0].thumbnailUrl,
                     contentDescription = null,
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            OverlayEditButton(
+                visible = true,
+                alignment = Alignment.BottomEnd,
+                onClick = cover.onEditClick,
+            )
         }
 
         // Playlist Name

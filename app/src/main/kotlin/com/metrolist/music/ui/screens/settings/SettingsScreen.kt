@@ -294,28 +294,9 @@ fun SettingsScreen(
                         SettingsRow(
                             icon = painterResource(R.drawable.security),
                             title = stringResource(R.string.privacy),
-                            showDivider = hasAndroidAuto || isAndroid12OrLater,
+                            showDivider = hasAndroidAuto,
                             onClick = { navController.navigate("settings/privacy") },
                         )
-                        if (isAndroid12OrLater) {
-                            SettingsRow(
-                                icon = painterResource(R.drawable.link),
-                                title = stringResource(R.string.default_links),
-                                showDivider = hasAndroidAuto,
-                                onClick = {
-                                    try {
-                                        context.startActivity(
-                                            Intent(
-                                                Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS,
-                                                "package:${context.packageName}".toUri(),
-                                            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                                        )
-                                    } catch (_: ActivityNotFoundException) {
-                                        Toast.makeText(context, R.string.open_app_settings_error, Toast.LENGTH_LONG).show()
-                                    }
-                                },
-                            )
-                        }
                         if (hasAndroidAuto) {
                             SettingsRow(
                                 icon = painterResource(R.drawable.ic_android_auto),
@@ -357,42 +338,63 @@ private fun SettingsSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
 ) {
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(SearchBarBg),
-        contentAlignment = Alignment.CenterStart,
+            .background(SearchBarBg)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.search),
-                contentDescription = null,
-                tint = TextSecondary,
-                modifier = Modifier.size(18.dp),
-            )
+        Icon(
+            painter = painterResource(R.drawable.search),
+            contentDescription = null,
+            tint = TextSecondary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        androidx.compose.foundation.text.BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = TextPrimary,
+                fontSize = 15.sp,
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(TextPrimary),
+            modifier = Modifier.weight(1f),
+            decorationBox = { innerTextField ->
+                Box(
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.search_settings),
+                            color = TextSecondary,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+        if (query.isNotEmpty()) {
             Spacer(Modifier.width(8.dp))
-            if (query.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.search_settings),
-                    color = TextSecondary,
-                    fontSize = 15.sp,
-                )
-            }
-            androidx.compose.foundation.text.BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    color = TextPrimary,
-                    fontSize = 15.sp,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(TextPrimary),
+            Icon(
+                painter = painterResource(R.drawable.close),
+                contentDescription = stringResource(R.string.clear),
+                tint = TextSecondary,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onQueryChange("") },
+                    ),
             )
         }
     }

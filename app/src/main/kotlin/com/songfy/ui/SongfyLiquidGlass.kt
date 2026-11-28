@@ -234,13 +234,14 @@ fun Modifier.songfyGlassContainer(
     shape: Shape = RoundedCornerShape(28.dp),
     shadowElevation: Dp = 24.dp,
 ): Modifier = this
-    .clip(shape)
-    .songfyLiquidGlass(
-        dark = dark,
-        shadowElevation = shadowElevation,
+    .shadow(
+        elevation = shadowElevation,
         shape = shape,
+        ambientColor = Color.Black.copy(alpha = 0.32f),
+        spotColor = Color.Black.copy(alpha = 0.32f),
     )
-    .background(if (dark) Color(0xC8141418) else Color(0xD8F6F7FA))
+    .clip(shape)
+    .background(if (dark) Color(0xEB15151A) else Color(0xF2F6F7FA))
     .border(
         width = 0.75.dp,
         color = if (dark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.08f),

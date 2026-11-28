@@ -410,27 +410,19 @@ fun LibraryMixScreen(
             keyboardController = keyboardController,
             modifier = Modifier.padding(start = 16.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(0xFF121216))
-                    .border(0.75.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
-                    .padding(horizontal = 10.dp),
-            ) {
-                SortHeader(
-                    sortType = sortType,
-                    sortDescending = sortDescending,
-                    onSortTypeChange = onSortTypeChange,
-                    onSortDescendingChange = onSortDescendingChange,
-                    sortTypeText = { sortType ->
-                        when (sortType) {
-                            MixSortType.CREATE_DATE -> R.string.sort_by_create_date
-                            MixSortType.LAST_UPDATED -> R.string.sort_by_last_updated
-                            MixSortType.NAME -> R.string.sort_by_name
-                        }
-                    },
-                )
-            }
+            SortHeader(
+                sortType = sortType,
+                sortDescending = sortDescending,
+                onSortTypeChange = onSortTypeChange,
+                onSortDescendingChange = onSortDescendingChange,
+                sortTypeText = { sortType ->
+                    when (sortType) {
+                        MixSortType.CREATE_DATE -> R.string.sort_by_create_date
+                        MixSortType.LAST_UPDATED -> R.string.sort_by_last_updated
+                        MixSortType.NAME -> R.string.sort_by_name
+                    }
+                },
+            )
 
             Spacer(Modifier.weight(1f))
 

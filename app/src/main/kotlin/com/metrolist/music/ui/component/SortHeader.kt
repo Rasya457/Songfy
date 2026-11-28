@@ -5,18 +5,18 @@
 
 package com.metrolist.music.ui.component
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -46,21 +47,25 @@ inline fun <reified T : Enum<T>> SortHeader(
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.padding(vertical = 4.dp),
     ) {
-        Text(
-            text = stringResource(sortTypeText(sortType)),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge,
-            modifier =
-            Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = false),
-                ) {
-                    menuExpanded = !menuExpanded
-                }.padding(horizontal = 4.dp, vertical = 8.dp),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f))
+                .clickable { menuExpanded = !menuExpanded }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(
+                text = stringResource(sortTypeText(sortType)),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = (-0.1).sp,
+            )
+        }
 
         LiquidGlassDropdownMenu(
             expanded = menuExpanded,
@@ -72,17 +77,15 @@ inline fun <reified T : Enum<T>> SortHeader(
                     text = {
                         Text(
                             text = stringResource(sortTypeText(type)),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
+                            fontSize = 15.sp,
+                            fontWeight = if (sortType == type) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     },
                     trailingIcon = {
                         Icon(
                             painter =
                             painterResource(
-                                if (sortType ==
-                                    type
-                                ) {
+                                if (sortType == type) {
                                     R.drawable.radio_button_checked
                                 } else {
                                     R.drawable.radio_button_unchecked
@@ -100,15 +103,21 @@ inline fun <reified T : Enum<T>> SortHeader(
         }
 
         if (sortType != PlaylistSongSortType.CUSTOM && showDescending == true) {
-            ResizableIconButton(
-                icon = if (sortDescending) R.drawable.arrow_downward else R.drawable.arrow_upward,
-                color = MaterialTheme.colorScheme.primary,
-                modifier =
-                Modifier
-                    .size(32.dp)
-                    .padding(8.dp),
-                onClick = { onSortDescendingChange(!sortDescending) },
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f))
+                    .clickable { onSortDescendingChange(!sortDescending) }
+                    .padding(6.dp),
+            ) {
+                Icon(
+                    painter = painterResource(if (sortDescending) R.drawable.arrow_downward else R.drawable.arrow_upward),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }

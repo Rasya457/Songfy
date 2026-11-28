@@ -61,13 +61,11 @@ import com.metrolist.music.constants.PersistentShuffleAcrossQueuesKey
 import com.metrolist.music.constants.PreventDuplicateTracksInQueueKey
 import com.metrolist.music.constants.RememberShuffleAndRepeatKey
 import com.metrolist.music.constants.ResumeOnBluetoothConnectKey
-import com.metrolist.music.constants.SeekExtraSeconds
 import com.metrolist.music.constants.ShufflePlaylistFirstKey
 import com.metrolist.music.constants.SimilarContent
 import com.metrolist.music.constants.SkipSilenceInstantKey
 import com.metrolist.music.constants.SkipSilenceKey
 import com.metrolist.music.constants.StopMusicOnTaskClearKey
-import com.metrolist.music.constants.VarispeedKey
 import com.metrolist.music.ui.component.DefaultDialog
 import com.metrolist.music.ui.component.EnumDialog
 import com.metrolist.music.ui.component.IconButton
@@ -88,8 +86,6 @@ import com.metrolist.music.constants.SleepTimerStartTimeKey
 import com.metrolist.music.constants.SleepTimerDayTimesKey
 import com.metrolist.music.ui.component.decodeDayTimes
 import com.metrolist.music.ui.component.encodeDayTimes
-import com.metrolist.music.constants.SleepTimerFadeOutKey
-import com.metrolist.music.constants.SleepTimerStopAfterCurrentSongKey
 import com.metrolist.music.ui.utils.getLoudnessLevelLabel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,19 +141,9 @@ fun PlayerSettings(
         defaultValue = true
     )
 
-    val (varispeed, onVarispeedChange) = rememberPreference(
-        key = VarispeedKey,
-        defaultValue = false
-    )
-
     val (enableGoogleCast, onEnableGoogleCastChange) = rememberPreference(
         key = EnableGoogleCastKey,
         defaultValue = true
-    )
-
-    val (seekExtraSeconds, onSeekExtraSeconds) = rememberPreference(
-        SeekExtraSeconds,
-        defaultValue = false
     )
 
     val (autoLoadMore, onAutoLoadMoreChange) = rememberPreference(
@@ -463,31 +449,6 @@ fun PlayerSettings(
                     onClick = { if (!crossfadeEnabled) onAudioOffloadChange(!audioOffload) }
                 ))
                 add(Material3SettingsItem(
-                    icon = painterResource(R.drawable.graphic_eq),
-                    title = { Text(stringResource(R.string.varispeed)) },
-                    description = {
-                        Text(
-                            stringResource(R.string.varispeed_description)
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = varispeed,
-                            onCheckedChange = onVarispeedChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (varispeed) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onVarispeedChange(!varispeed) }
-                ))
-                add(Material3SettingsItem(
                     icon = painterResource(R.drawable.speed),
                     title = { Text(stringResource(R.string.audio_track_playback_params)) },
                     description = {
@@ -534,27 +495,6 @@ fun PlayerSettings(
                         onClick = { onEnableGoogleCastChange(!enableGoogleCast) }
                     ))
                 }
-                add(Material3SettingsItem(
-                    icon = painterResource(R.drawable.arrow_forward),
-                    title = { Text(stringResource(R.string.seek_seconds_addup)) },
-                    description = { Text(stringResource(R.string.seek_seconds_addup_description)) },
-                    trailingContent = {
-                        Switch(
-                            checked = seekExtraSeconds,
-                            onCheckedChange = onSeekExtraSeconds,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (seekExtraSeconds) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
-                            }
-                        )
-                    },
-                    onClick = { onSeekExtraSeconds(!seekExtraSeconds) }
-                ))
             }
         )
 
@@ -586,14 +526,6 @@ fun PlayerSettings(
         val (sleepTimerDayTimes, onSleepTimerDayTimesChange) = rememberPreference(
             SleepTimerDayTimesKey,
             defaultValue = ""
-        )
-
-        val (sleepTimerStopAfterCurrentSong, onSleepTimerStopAfterCurrentSongChange) = rememberPreference (
-        SleepTimerStopAfterCurrentSongKey,
-        defaultValue = false)
-        val (sleepTimerFadeOut, onSleepTimerFadeOutChange) = rememberPreference(
-            SleepTimerFadeOutKey,
-            false
         )
 
         if (showSleepTimerDialog) {
@@ -646,6 +578,7 @@ fun PlayerSettings(
                     )
                 )
 
+                if (sleepTimerEnabled) {
                     add(
                         Material3SettingsItem(
                             icon = painterResource(R.drawable.baseline_event_repeat_24),
@@ -655,73 +588,10 @@ fun PlayerSettings(
                                     stringResource(R.string.sleep_timer_repeat_description)
                                 )
                             },
-                            trailingContent = {
-                                Switch(
-                                    checked = sleepTimerEnabled,
-                                    onCheckedChange = {showSleepTimerDialog = true},
-                                    thumbContent = {
-                                        Icon(
-                                            painter = painterResource(
-                                                id = if (sleepTimerEnabled) R.drawable.check else R.drawable.close
-                                            ),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(SwitchDefaults.IconSize)
-                                        )
-                                    }
-                                )
-                            },
                             onClick = { showSleepTimerDialog = true }
                         )
                     )
-
-
-                add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.more_time),
-                        title = { Text(stringResource(R.string.sleep_timer_stop_after_current_song_title)) },
-                        description = { Text(stringResource(R.string.sleep_timer_stop_after_current_song_description)) },
-                        trailingContent = {
-                            Switch(
-                                checked = sleepTimerStopAfterCurrentSong,
-                                onCheckedChange = onSleepTimerStopAfterCurrentSongChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (sleepTimerStopAfterCurrentSong) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onSleepTimerStopAfterCurrentSongChange(!sleepTimerStopAfterCurrentSong) }
-                    )
-                )
-
-                add(
-                    Material3SettingsItem(
-                        icon = painterResource(R.drawable.timer_arrow_down),
-                        title = { Text(stringResource(R.string.sleep_timer_fade_out_title)) },
-                        description = { Text(stringResource(R.string.sleep_timer_fade_out_description)) },
-                        trailingContent = {
-                            Switch(
-                                checked = sleepTimerFadeOut,
-                                onCheckedChange = onSleepTimerFadeOutChange,
-                                thumbContent = {
-                                    Icon(
-                                        painter = painterResource(
-                                            id = if (sleepTimerFadeOut) R.drawable.check else R.drawable.close
-                                        ),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(SwitchDefaults.IconSize)
-                                    )
-                                }
-                            )
-                        },
-                        onClick = { onSleepTimerFadeOutChange(!sleepTimerFadeOut) }
-                    )
-                )
+                }
 
             }
         )

@@ -27,6 +27,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -116,6 +117,8 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.PlaylistItem
+import com.metrolist.innertube.models.SongItem
+import com.metrolist.innertube.models.WatchEndpoint
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalDownloadUtil
 import com.metrolist.music.LocalNavController
@@ -134,8 +137,10 @@ import com.metrolist.music.db.entities.PlaylistSong
 import com.metrolist.music.db.entities.PlaylistSongMap
 import com.metrolist.music.extensions.move
 import com.metrolist.music.extensions.toMediaItem
+import com.metrolist.music.models.toMediaMetadata
 import com.metrolist.music.playback.ExoDownloadService
 import com.metrolist.music.playback.queues.ListQueue
+import com.metrolist.music.playback.queues.YouTubeQueue
 import com.metrolist.music.ui.component.ActionPromptDialog
 import com.metrolist.music.ui.component.DefaultDialog
 import com.metrolist.music.ui.component.DraggableScrollbar
@@ -147,6 +152,7 @@ import com.metrolist.music.ui.component.OverlayEditButton
 import com.metrolist.music.ui.component.SongListItem
 import com.metrolist.music.ui.component.SortHeader
 import com.metrolist.music.ui.component.TextFieldDialog
+import com.metrolist.music.ui.component.YouTubeListItem
 import com.metrolist.music.ui.menu.CustomThumbnailMenu
 import com.metrolist.music.ui.menu.LocalPlaylistMenu
 import com.metrolist.music.ui.menu.SelectionSongMenu
@@ -261,6 +267,32 @@ fun LocalPlaylistScreen(
     }
 
     val editable: Boolean = playlist?.playlist?.isEditable == true
+
+    var onlineSearchResults by remember { mutableStateOf<List<SongItem>>(emptyList()) }
+    var isSearchingOnline by remember { mutableStateOf(false) }
+    val recentlyAddedIds = remember { mutableStateListOf<String>() }
+    val existingSongIds = remember(songs) { songs.mapTo(HashSet()) { it.song.id } }
+
+    LaunchedEffect(isSearching, query.text, editable) {
+        val trimmed = query.text.trim()
+        if (!isSearching || !editable || trimmed.length < 2) {
+            onlineSearchResults = emptyList()
+            isSearchingOnline = false
+            return@LaunchedEffect
+        }
+        isSearchingOnline = true
+        kotlinx.coroutines.delay(350L)
+        val results = withContext(Dispatchers.IO) {
+            YouTube.search(trimmed, YouTube.SearchFilter.FILTER_SONG)
+                .getOrNull()
+                ?.items
+                ?.filterIsInstance<SongItem>()
+                ?.take(15)
+                .orEmpty()
+        }
+        onlineSearchResults = results
+        isSearchingOnline = false
+    }
 
     LaunchedEffect(songs) {
         selection.fastForEachReversed { mapId ->
@@ -533,7 +565,7 @@ fun LocalPlaylistScreen(
                     contentPadding = LocalPlayerAwareWindowInsets.current.union(WindowInsets.ime).asPaddingValues(),
                 ) {
             playlist?.let { playlist ->
-                if (playlist.songCount == 0 && playlist.playlist.remoteSongCount == 0) {
+                if (!isSearching && playlist.songCount == 0 && playlist.playlist.remoteSongCount == 0) {
                     item(key = "empty_placeholder") {
                         EmptyPlaceholder(
                             icon = R.drawable.music_note,
@@ -541,65 +573,75 @@ fun LocalPlaylistScreen(
                             modifier = Modifier.animateItem(),
                         )
                     }
-                } else {
-                    if (!isSearching) {
-                        item(key = "playlist_header") {
-                            LocalPlaylistHeader(
-                                playlist = playlist,
-                                songs = songs,
-                                onlinePlaylist = onlinePlaylist,
-                                onShowEditDialog = { showEditDialog = true },
-                                onShowRemoveDownloadDialog = { showRemoveDownloadDialog = true },
-                                onshowDeletePlaylistDialog = { showDeletePlaylistDialog = true },
-                                onStartSearch = { isSearching = true },
-                                snackbarHostState = snackbarHostState,
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
+                } else if (!isSearching) {
+                    item(key = "playlist_header") {
+                        LocalPlaylistHeader(
+                            playlist = playlist,
+                            songs = songs,
+                            onlinePlaylist = onlinePlaylist,
+                            onShowEditDialog = { showEditDialog = true },
+                            onShowRemoveDownloadDialog = { showRemoveDownloadDialog = true },
+                            onshowDeletePlaylistDialog = { showDeletePlaylistDialog = true },
+                            onStartSearch = { isSearching = true },
+                            snackbarHostState = snackbarHostState,
+                            modifier = Modifier.animateItem(),
+                        )
                     }
 
                     item(key = "controls_row") {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
                                     .animateItem(),
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.08f))
-                                    .border(0.75.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(50))
-                                    .padding(horizontal = 10.dp),
-                            ) {
-                                SortHeader(
-                                    sortType = sortType,
-                                    sortDescending = sortDescending,
-                                    onSortTypeChange = onSortTypeChange,
-                                    onSortDescendingChange = onSortDescendingChange,
-                                    sortTypeText = { sortType ->
-                                        when (sortType) {
-                                            PlaylistSongSortType.CUSTOM -> R.string.sort_by_custom
-                                            PlaylistSongSortType.CREATE_DATE -> R.string.sort_by_create_date
-                                            PlaylistSongSortType.NAME -> R.string.sort_by_name
-                                            PlaylistSongSortType.ARTIST -> R.string.sort_by_artist
-                                            PlaylistSongSortType.PLAY_TIME -> R.string.sort_by_play_time
-                                        }
-                                    },
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
+                            SortHeader(
+                                sortType = sortType,
+                                sortDescending = sortDescending,
+                                onSortTypeChange = onSortTypeChange,
+                                onSortDescendingChange = onSortDescendingChange,
+                                sortTypeText = { sortType ->
+                                    when (sortType) {
+                                        PlaylistSongSortType.CUSTOM -> R.string.sort_by_custom
+                                        PlaylistSongSortType.CREATE_DATE -> R.string.sort_by_create_date
+                                        PlaylistSongSortType.NAME -> R.string.sort_by_name
+                                        PlaylistSongSortType.ARTIST -> R.string.sort_by_artist
+                                        PlaylistSongSortType.PLAY_TIME -> R.string.sort_by_play_time
+                                    }
+                                },
+                            )
+
                             if (editable) {
-                                IconButton(
-                                    onClick = { locked = !locked },
-                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                val unlocked = !locked
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(
+                                            if (unlocked) {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                                            } else {
+                                                Color.White.copy(alpha = 0.10f)
+                                            },
+                                        )
+                                        .clickable { locked = !locked }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
                                 ) {
                                     Icon(
                                         painter = painterResource(if (locked) R.drawable.lock else R.drawable.lock_open),
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = if (unlocked) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.88f),
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                    Text(
+                                        text = if (locked) "Terkunci" else "Atur",
+                                        color = if (unlocked) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.88f),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Medium,
                                     )
                                 }
                             }
@@ -785,6 +827,105 @@ fun LocalPlaylistScreen(
                             }
                         }
                     }
+                }
+            }
+
+            if (isSearching && editable && query.text.trim().length >= 2) {
+                item(key = "online_add_header") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 8.dp),
+                    ) {
+                        Text(
+                            text = "Tambahkan ke playlist",
+                            color = Color.White.copy(alpha = 0.92f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (isSearchingOnline) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White.copy(alpha = 0.78f),
+                            )
+                        }
+                    }
+                }
+
+                items(
+                    count = onlineSearchResults.size,
+                    key = { idx -> "online_add_${onlineSearchResults[idx].id}" },
+                ) { idx ->
+                    val ytSong = onlineSearchResults[idx]
+                    val alreadyAdded = ytSong.id in existingSongIds || ytSong.id in recentlyAddedIds
+
+                    YouTubeListItem(
+                        item = ytSong,
+                        isActive = ytSong.id == mediaMetadata?.id,
+                        isPlaying = isPlaying,
+                        trailingContent = {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .padding(end = 4.dp)
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (alreadyAdded) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.26f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.14f)
+                                        },
+                                    )
+                                    .clickable(enabled = !alreadyAdded) {
+                                        val targetPlaylist = playlist ?: return@clickable
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        recentlyAddedIds.add(ytSong.id)
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            database.insert(ytSong.toMediaMetadata())
+                                            database.addSongsToPlaylist(
+                                                targetPlaylist,
+                                                listOf(ytSong.id to null),
+                                            )
+                                            targetPlaylist.playlist.browseId?.let { browseId ->
+                                                syncUtils.scheduleAddToPlaylist(
+                                                    browseId,
+                                                    targetPlaylist.id,
+                                                    listOf(ytSong.id),
+                                                )
+                                            }
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Ditambahkan ke \"${targetPlaylist.playlist.name}\"",
+                                                    android.widget.Toast.LENGTH_SHORT,
+                                                ).show()
+                                            }
+                                        }
+                                    },
+                            ) {
+                                Icon(
+                                    painter = painterResource(if (alreadyAdded) R.drawable.check else R.drawable.add),
+                                    contentDescription = if (alreadyAdded) "Sudah ditambahkan" else "Tambahkan",
+                                    tint = if (alreadyAdded) MaterialTheme.colorScheme.primary else Color.White,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                playerConnection.playQueue(
+                                    YouTubeQueue(
+                                        WatchEndpoint(videoId = ytSong.id),
+                                        ytSong.toMediaMetadata(),
+                                    ),
+                                )
+                            },
+                    )
                 }
             }
         }
@@ -1048,7 +1189,7 @@ fun LocalPlaylistHeader(
             uri?.let { sourceUri ->
                 val coverDir = java.io.File(context.filesDir, "playlist_covers").apply { mkdirs() }
                 val destFile = java.io.File(coverDir, "cover_${currentPlaylist.id}_${System.currentTimeMillis()}.jpg")
-                val destUri = FileProvider.getUriForFile(context, "${context.packageName}.FileProvider", destFile)
+                val destUri = Uri.fromFile(destFile)
                 pendingCropDestUri = destUri
 
                 val options =
@@ -1417,7 +1558,11 @@ fun uriToByteArray(
     uri: Uri,
 ): ByteArray? =
     try {
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-    } catch (_: SecurityException) {
+        if (uri.scheme == "file") {
+            uri.path?.let { java.io.File(it).takeIf { f -> f.exists() }?.readBytes() }
+        } else {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }
+    } catch (_: Exception) {
         null
     }

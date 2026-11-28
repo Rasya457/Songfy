@@ -87,6 +87,7 @@ import com.metrolist.music.ui.component.DraggableScrollbar
 import com.metrolist.music.ui.component.EmptyPlaceholder
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.LocalMenuState
+import com.metrolist.music.ui.component.OverlayEditButton
 import com.metrolist.music.ui.component.SongListItem
 import com.metrolist.music.ui.component.SortHeader
 import com.metrolist.music.ui.menu.CachePlaylistMenu
@@ -476,6 +477,7 @@ private fun CachePlaylistHeader(
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val downloadUtil = LocalDownloadUtil.current
+    val cover = rememberAutoPlaylistCover("cache")
 
     Column(
         modifier = modifier
@@ -498,12 +500,17 @@ private fun CachePlaylistHeader(
                 shape = RoundedCornerShape(3.dp)
             ) {
                 AsyncImage(
-                    model = songs.first().thumbnailUrl,
+                    model = cover.customCoverUrl ?: songs.first().thumbnailUrl,
                     contentDescription = null,
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             }
+            OverlayEditButton(
+                visible = true,
+                alignment = Alignment.BottomEnd,
+                onClick = cover.onEditClick,
+            )
         }
 
         // Playlist Name

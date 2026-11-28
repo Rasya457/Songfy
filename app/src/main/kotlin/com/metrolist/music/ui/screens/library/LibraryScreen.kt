@@ -48,12 +48,12 @@ import com.metrolist.music.utils.rememberEnumPreference
 @Composable
 fun LibraryScreen() {
     val navController = LocalNavController.current
-    var filterType by rememberEnumPreference(ChipSortTypeKey, LibraryFilter.LIBRARY)
-    var libraryViewType by rememberEnumPreference(AlbumViewTypeKey, LibraryViewType.LIST)
+    var filterType by rememberEnumPreference(ChipSortTypeKey, LibraryFilter.PLAYLISTS)
     var playlistViewType by rememberEnumPreference(PlaylistViewTypeKey, LibraryViewType.LIST)
 
+    val activeFilter = if (filterType == LibraryFilter.LIBRARY) LibraryFilter.PLAYLISTS else filterType
+
     val filterTabs = listOf(
-        LibraryFilter.LIBRARY to "Semua",
         LibraryFilter.PLAYLISTS to stringResource(R.string.filter_playlists),
         LibraryFilter.SONGS to stringResource(R.string.filter_songs),
         LibraryFilter.ALBUMS to stringResource(R.string.filter_albums),
@@ -83,7 +83,7 @@ fun LibraryScreen() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 filterTabs.forEach { (tab, label) ->
-                    val selected = filterType == tab
+                    val selected = activeFilter == tab
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -92,11 +92,7 @@ fun LibraryScreen() {
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
                             ) {
-                                filterType = if (selected && tab != LibraryFilter.LIBRARY) {
-                                    LibraryFilter.LIBRARY
-                                } else {
-                                    tab
-                                }
+                                filterType = tab
                             }
                             .padding(top = 4.dp, bottom = 2.dp),
                     ) {
@@ -121,13 +117,8 @@ fun LibraryScreen() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        when (filterType) {
-            LibraryFilter.LIBRARY -> LibraryMixScreen(
-                navController = navController,
-                filterContent = filterContent,
-                viewType = libraryViewType,
-                onViewTypeChange = { libraryViewType = it },
-            )
+        when (activeFilter) {
+            LibraryFilter.LIBRARY,
             LibraryFilter.PLAYLISTS -> LibraryPlaylistsScreen(
                 navController = navController,
                 filterContent = filterContent,
@@ -136,19 +127,19 @@ fun LibraryScreen() {
             )
             LibraryFilter.SONGS -> LibrarySongsScreen(
                 navController,
-                { filterType = LibraryFilter.LIBRARY },
+                { filterType = LibraryFilter.PLAYLISTS },
             )
             LibraryFilter.ALBUMS -> LibraryAlbumsScreen(
                 navController,
-                { filterType = LibraryFilter.LIBRARY },
+                { filterType = LibraryFilter.PLAYLISTS },
             )
             LibraryFilter.ARTISTS -> LibraryArtistsScreen(
                 navController,
-                { filterType = LibraryFilter.LIBRARY },
+                { filterType = LibraryFilter.PLAYLISTS },
             )
             LibraryFilter.PODCASTS -> LibraryPodcastsScreen(
                 navController,
-                { filterType = LibraryFilter.LIBRARY },
+                { filterType = LibraryFilter.PLAYLISTS },
             )
         }
     }
